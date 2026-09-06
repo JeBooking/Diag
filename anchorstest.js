@@ -237,5 +237,33 @@ const tEl = ids["toast-host"].children[ids["toast-host"].children.length - 1];
 check("气泡带类型 accent 与显示类",
   tEl.className.indexOf("toast-info") !== -1 && tEl.classList.contains("toast-show"));
 
+console.log("== 8. 双击节点不再异步弹出属性面板 ==");
+// 验证：包装版对诊断节点短路（不调用 onShowNodePanel），内置节点仍走原版。
+const LG = sandbox.LiteGraph;
+let panelCalls = 0;
+canvas.onShowNodePanel = () => { panelCalls++; };
+
+// 诊断节点：短路
+canvas.processNodeDblClicked(Q1);
+canvas.processNodeDblClicked(Q2);
+check("诊断节点 processNodeDblClicked 不调 onShowNodePanel", panelCalls === 0,
+  "调了 " + panelCalls + " 次");
+
+// 内置节点：仍走原版
+const builtin = LG.createNode("basic/const");
+builtin.pos = [0, 0]; graph.add(builtin);
+canvas.processNodeDblClicked(builtin);
+check("内置节点 processNodeDblClicked 仍走原版", panelCalls === 1,
+  "调了 " + panelCalls + " 次");
+
+// 完整链路：双击诊断节点 → onDblClick 弹 prompt → 关闭 →
+// litegraph 紧接着调 processNodeDblClicked 不应再触发任何面板
+panelCalls = 0;
+sandbox.prompt = () => "_edited_";
+Q1.onDblClick();                     // 模拟双击触发（弹 prompt 并立刻关闭）
+canvas.processNodeDblClicked(Q1);    // 模拟 litegraph 紧接着调用
+check("完整链路：双击诊断节点 → prompt → processNodeDblClicked 不触发面板",
+  panelCalls === 0, "调了 " + panelCalls + " 次");
+
 console.log("\n结果: " + pass + " 通过 / " + fail + " 失败");
 process.exit(fail ? 1 : 0);

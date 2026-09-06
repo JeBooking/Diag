@@ -138,6 +138,21 @@
     return result;
   };
 
+  // --- 双击节点不再弹出默认的「节点属性面板」---
+  // litegraph 在 processMouseUp 判定为双击节点后，会调用：
+  //   1) node.onDblClick（我们的诊断节点自定义为弹 prompt 编辑文本）
+  //   2) this.processNodeDblClicked(node) → 内部 setTimeout 100ms 后调用
+  //      showShowNodePanel(n)，异步弹出节点属性面板（用户感觉到的"菜单栏"）
+  // 问题：prompt 关闭后第 2 步继续执行，setTimeout 的面板在 100ms 后延迟弹出，
+  // 用户感觉"关闭 prompt 后再单击别的节点时弹出了菜单栏"——其实是诊断节点的
+  // 默认属性面板在异步弹出来。诊断节点已经自定义了双击行为，这里直接屏蔽
+  // 默认面板（内置节点不受影响，继续享受原生的属性面板/默认值编辑功能）。
+  var _origProcessNodeDblClicked = LGraphCanvas.prototype.processNodeDblClicked;
+  LGraphCanvas.prototype.processNodeDblClicked = function (n) {
+    if (n && typeof n.type === "string" && n.type.indexOf("diagnosis/") === 0) return;
+    return _origProcessNodeDblClicked.apply(this, arguments);
+  };
+
   var canvas = new LGraphCanvas("#graph-canvas", graph);
   // 右键菜单只显示带 filter="diagnosis" 标记的节点（litegraph 内置的 176 个
   // basic/*、events/*、widget/* 等节点对「诊断决策树」无用，全部从菜单隐藏）
