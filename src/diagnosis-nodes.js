@@ -33,6 +33,59 @@
     "diagnosis/leaf":     { fill: "#fb8c00", stroke: "#e65100", anchor: "#fff3e0" }
   };
 
+  // 文本参数（参考亿图图示/draw.io/Visio 流程图节点的内部留白与字号惯例）
+  var TEXT_PAD_X = 12;        // 文本左右内边距（菱形/六边形的尖角区不能占）
+  var TEXT_LINE = 16;         // 行高（px）
+  var TEXT_MAX_LINES = 4;     // 问诊节点最多显示 4 行，超出截断
+  var FONT_MAIN = "14px 'Microsoft YaHei', 'PingFang SC', sans-serif";
+  var FONT_SUB  = "11px 'Microsoft YaHei', 'PingFang SC', sans-serif";
+
+  // 文本按 maxWidth 自动换行（中文按字符宽度算近似宽度）
+  function wrapText(ctx, text, maxWidth) {
+    if (!text) return [];
+    var lines = [];
+    var cur = "";
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      var tentative = cur + c;
+      if (ctx.measureText(tentative).width > maxWidth && cur.length > 0) {
+        lines.push(cur);
+        cur = c;
+      } else {
+        cur = tentative;
+      }
+    }
+    if (cur.length) lines.push(cur);
+    return lines;
+  }
+
+  // 绘制节点内文本（垂直水平居中，超出截断加省略号）
+  // 返回总占用行高（用于外部布局决策）
+  function drawNodeLabel(ctx, text, w, h, font) {
+    if (!text) return 0;
+    ctx.font = font || FONT_MAIN;
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    var maxWidth = Math.max(40, w - TEXT_PAD_X * 2);
+    var lines = wrapText(ctx, text, maxWidth);
+    if (lines.length > TEXT_MAX_LINES) {
+      lines = lines.slice(0, TEXT_MAX_LINES);
+      // 最后一行的最后一个字符替换为省略号（若它本身不宽）
+      var last = lines[lines.length - 1];
+      while (last.length > 1 && ctx.measureText(last + "…").width > maxWidth) {
+        last = last.slice(0, -1);
+      }
+      lines[lines.length - 1] = last + "…";
+    }
+    var total = lines.length * TEXT_LINE;
+    var y0 = (h - total) / 2 + 0.5; // 视觉居中微调
+    for (var i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], w * 0.5, y0 + i * TEXT_LINE);
+    }
+    return total;
+  }
+
   // 节点局部坐标系（0,0 为左上角）下，第 i 个锚点位置：0上 1右 2下 3左
   function anchorLocal(node, slot) {
     var w = node.size[0], h = node.size[1];
@@ -165,7 +218,7 @@
       return out;
     };
 
-    // 自绘形状 + 锚点（onDrawBackground 时 ctx 已平移到节点局部坐标）
+    // 自绘形状 + 文本 + 锚点（onDrawBackground 时 ctx 已平移到节点局部坐标）
     proto.onDrawBackground = function (ctx, lcanvas) {
       var style = SHAPE_STYLES[this.type] || { fill: "#90a4ae", stroke: "#455a64", anchor: "#eceff1" };
       var w = this.size[0], h = this.size[1];
@@ -176,6 +229,11 @@
       ctx.strokeStyle = style.stroke;
       ctx.lineWidth = 2;
       ctx.stroke();
+
+      // 形状内文本（参考亿图图示/draw.io/Visio 流程图节点做法）
+      // 三类节点的「主文本字段」由各节点自定义：getLabel(ctx, w, h) 返回 void
+      var labelFn = this.getLabel;
+      if (typeof labelFn === "function") labelFn.call(this, ctx, w, h);
 
       // 四个锚点：默认空心小圆；鼠标靠近时放大提示可连接
       for (var i = 0; i < 4; i++) {
@@ -224,7 +282,7 @@
       self.addInput(name, "");
     });
     this.properties = { scenario: "诊断场景描述" };
-    this.size = [150, 70];
+    this.size = [180, 80];
     this.resizable = false;
   }
   DiagnosisStartNode.title = "诊断起点";
@@ -233,6 +291,16 @@
   DiagnosisStartNode.title_mode = LiteGraph.NO_TITLE;      // 无标题栏
   DiagnosisStartNode.color = "rgba(0,0,0,0)";              // 隐藏库默认边框色
   DiagnosisStartNode.bgcolor = "rgba(0,0,0,0)";            // 隐藏库默认底色，由自绘接管
+  DiagnosisStartNode.prototype.getLabel = function (ctx, w, h) {
+    drawNodeLabel(ctx, this.properties.scenario, w, h);
+  };
+  DiagnosisStartNode.prototype.onDblClick = function () {
+    var next = window.prompt("编辑诊断场景（起点描述）：", this.properties.scenario || "");
+    if (next !== null) {
+      this.properties.scenario = next;
+      this.setDirtyCanvas(true, false);
+    }
+  };
   makeDiagnosisProto(DiagnosisStartNode.prototype);
   LiteGraph.registerNodeType("diagnosis/start", DiagnosisStartNode);
 
@@ -247,7 +315,7 @@
       self.addInput(name, "");
     });
     this.properties = { question: "请输入判断问题" };
-    this.size = [140, 110];
+    this.size = [180, 130];
     this.resizable = false;
   }
   DiagnosisQuestionNode.title = "问诊节点";
@@ -256,6 +324,18 @@
   DiagnosisQuestionNode.title_mode = LiteGraph.NO_TITLE;
   DiagnosisQuestionNode.color = "rgba(0,0,0,0)";
   DiagnosisQuestionNode.bgcolor = "rgba(0,0,0,0)";
+  DiagnosisQuestionNode.prototype.getLabel = function (ctx, w, h) {
+    // 菱形尖角不能占文字区，额外收窄可绘宽度
+    var innerW = Math.max(60, w * 0.72);
+    drawNodeLabel(ctx, this.properties.question, innerW, h);
+  };
+  DiagnosisQuestionNode.prototype.onDblClick = function () {
+    var next = window.prompt("编辑判断问题：", this.properties.question || "");
+    if (next !== null) {
+      this.properties.question = next;
+      this.setDirtyCanvas(true, false);
+    }
+  };
   makeDiagnosisProto(DiagnosisQuestionNode.prototype);
   LiteGraph.registerNodeType("diagnosis/question", DiagnosisQuestionNode);
 
@@ -270,7 +350,7 @@
       self.addInput(name, "");
     });
     this.properties = { name: "诊断结论", confidence: 0.8, advice: "建议的处理方式" };
-    this.size = [160, 70];
+    this.size = [180, 100];
     this.resizable = false;
   }
   DiagnosisLeafNode.title = "诊断结论";
@@ -279,6 +359,32 @@
   DiagnosisLeafNode.title_mode = LiteGraph.NO_TITLE;
   DiagnosisLeafNode.color = "rgba(0,0,0,0)";
   DiagnosisLeafNode.bgcolor = "rgba(0,0,0,0)";
+  DiagnosisLeafNode.prototype.getLabel = function (ctx, w, h) {
+    // 主标题 name + 副标题置信度（六边形左右为尖角，给中间留宽）
+    var innerW = Math.max(60, w * 0.78);
+    // 主标题垂直居中略偏上，副标题紧贴下方
+    var totalMain = drawNodeLabel(ctx, this.properties.name, innerW, h * 0.65);
+    var conf = Math.round((this.properties.confidence || 0) * 100);
+    ctx.font = FONT_SUB;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    var subY = h * 0.5 + totalMain * 0.25 + 2;
+    ctx.fillText("置信度 " + conf + "%", w * 0.5, subY);
+  };
+  DiagnosisLeafNode.prototype.onDblClick = function () {
+    var name = window.prompt("编辑诊断结论（名称）：", this.properties.name || "");
+    if (name === null) return;
+    this.properties.name = name;
+    var confStr = window.prompt("编辑置信度（0~1，例如 0.8）：", String(this.properties.confidence || 0));
+    if (confStr !== null) {
+      var v = parseFloat(confStr);
+      if (!isNaN(v)) this.properties.confidence = Math.max(0, Math.min(1, v));
+    }
+    var advice = window.prompt("编辑处置建议：", this.properties.advice || "");
+    if (advice !== null) this.properties.advice = advice;
+    this.setDirtyCanvas(true, false);
+  };
   makeDiagnosisProto(DiagnosisLeafNode.prototype);
   LiteGraph.registerNodeType("diagnosis/leaf", DiagnosisLeafNode);
 

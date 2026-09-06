@@ -166,9 +166,11 @@ check("尺寸固定（resizable = false）", graph._nodes.every((n) => n.resizab
 console.log("== 2. 锚点几何（上下左右边中点） ==");
 const s0 = graph.findNodesByType("diagnosis/start")[0];
 const ap = anchor(s0, 0), ar = anchor(s0, 1), ab = anchor(s0, 2), al = anchor(s0, 3);
-check("上锚点 = 顶边中点", Math.abs(ap[0] - (s0.pos[0] + 75)) < 0.01 && Math.abs(ap[1] - s0.pos[1]) < 0.01);
-check("右锚点 = 右边中点", Math.abs(ar[0] - (s0.pos[0] + 150)) < 0.01 && Math.abs(ar[1] - (s0.pos[1] + 35)) < 0.01);
-check("下锚点 = 底边中点", Math.abs(ab[1] - (s0.pos[1] + 70)) < 0.01);
+// 节点尺寸动态读（节点尺寸可能在版本演进中调整）
+const w0 = s0.size[0], h0 = s0.size[1];
+check("上锚点 = 顶边中点", Math.abs(ap[0] - (s0.pos[0] + w0 * 0.5)) < 0.01 && Math.abs(ap[1] - s0.pos[1]) < 0.01);
+check("右锚点 = 右边中点", Math.abs(ar[0] - (s0.pos[0] + w0)) < 0.01 && Math.abs(ar[1] - (s0.pos[1] + h0 * 0.5)) < 0.01);
+check("下锚点 = 底边中点", Math.abs(ab[0] - (s0.pos[0] + w0 * 0.5)) < 0.01 && Math.abs(ab[1] - (s0.pos[1] + h0)) < 0.01);
 check("左锚点 = 左边中点", Math.abs(al[0] - s0.pos[0]) < 0.01);
 
 console.log("== 3. 行为决定方向（真实 mousedown/mouseup 路径） ==");
