@@ -102,6 +102,14 @@
         st.consumed = false;
       }
       this.last_mouseclick = willBeDouble ? 0 : now; // 与状态机保持同步
+      // 关键修复：双击手势结束后，强制清掉 litegraph 的 pointer_is_double 标志。
+      // litegraph 在 processMouseDown 开头若检测到 pointer_is_down 仍为 true（即
+      // 第二击 mousedown 早于第一击 mouseup 到达，或 prompt 同步阻塞导致 mouseup
+      // 延迟/丢失），会置 pointer_is_double=true；此后 processMouseUp 若未走
+      // is_primary 分支复位，该标志会残留到下一次单击，使「单击」被误判进
+      // processMouseDown 的 `else if (e.which == 3 || pointer_is_double)` 分支，
+      // 弹出右键菜单。双击消费后强制复位，保证下一击是干净的单击。
+      if (willBeDouble) this.pointer_is_double = false;
       return result;
     }
     return _origProcessMouseDown.apply(this, arguments);

@@ -265,5 +265,64 @@ canvas.processNodeDblClicked(Q1);    // 模拟 litegraph 紧接着调用
 check("完整链路：双击诊断节点 → prompt → processNodeDblClicked 不触发面板",
   panelCalls === 0, "调了 " + panelCalls + " 次");
 
+console.log("== 9. 双击后单击不再弹出右键菜单（pointer_is_double 残留修复） ==");
+// 复现：litegraph 在双击第二击 mousedown 时若 pointer_is_down 仍为 true（prompt
+// 同步阻塞导致第一击 mouseup 延迟/丢失），会置 pointer_is_double=true；该标志若
+// 未被 processMouseUp 复位，会残留到下一次单击，使单击走进
+// `else if (e.which == 3 || pointer_is_double)` 分支 → 弹出右键菜单。
+// 修复后：双击消费（willBeDouble）时强制 pointer_is_double=false。
+syncVisible();
+
+// 场景 A：模拟 pointer_is_double 残留为 true（库内部状态），再单击节点
+canvas.pointer_is_double = true;   // 人为制造残留（等价于库未复位的状态）
+canvas.pointer_is_down = false;
+
+// 观察 processContextMenu 是否被调用（右键菜单弹出的标志）
+let ctxMenuCalls = 0;
+const origCtxMenu = canvas.processContextMenu;
+canvas.processContextMenu = function () { ctxMenuCalls++; };
+
+// 单击节点：走完整 processMouseDown（真实事件路径）
+// 这第一击应该是"单击"（上一双击已消费），不应弹右键菜单
+const targetNode = Q2;
+const tp = [targetNode.pos[0] + targetNode.size[0] * 0.5, targetNode.pos[1] + targetNode.size[1] * 0.5];
+press(tp[0], tp[1]);
+
+// 修复前：pointer_is_double=true 残留会导致这次单击走进右键菜单分支
+// 修复后：双击消费时已强制 pointer_is_double=false，这里应正常单击
+check("双击残留 pointer_is_double 后，单击节点不再弹右键菜单", ctxMenuCalls === 0,
+  "processContextMenu 被调了 " + ctxMenuCalls + " 次");
+
+// 场景 B：完整的双击 + 单击序列，验证双击后指针标志被复位
+// 恢复 processContextMenu
+canvas.processContextMenu = origCtxMenu;
+ctxMenuCalls = 0;
+canvas.pointer_is_double = false;
+canvas.pointer_is_down = false;
+canvas.__dblState = null;  // 重置双击状态机
+
+// 双击节点（两击，间隔 < 300ms）
+const nPos = [targetNode.pos[0] + 20, targetNode.pos[1] + 20];
+NOW = 20000;
+press(nPos[0], nPos[1]);  // 第 1 击
+NOW = 20100;              // +100ms
+press(nPos[0], nPos[1]);  // 第 2 击（双击）
+
+// 双击后 pointer_is_double 应已被我们的包装强制复位为 false
+const doubleAfterFlag = canvas.pointer_is_double;
+// 双击消费后，即使库内部把它设 true，我们的包装也会在调用后复位
+// （库在 processMouseDown 末尾不重置 pointer_is_double，只重置 last_mouseclick）
+check("双击消费后 pointer_is_double 已复位（不会再弹右键菜单）",
+  doubleAfterFlag === false, "pointer_is_double=" + doubleAfterFlag);
+
+// 单击另一节点（第三击，应正常单击而非右键菜单）
+NOW = 20300;
+const otherNode = Q1;
+const op = [otherNode.pos[0] + 20, otherNode.pos[1] + 20];
+ctxMenuCalls = 0;
+press(op[0], op[1]);
+check("双击后的第三击为正常单击（不弹右键菜单）", ctxMenuCalls === 0,
+  "processContextMenu 被调了 " + ctxMenuCalls + " 次");
+
 console.log("\n结果: " + pass + " 通过 / " + fail + " 失败");
 process.exit(fail ? 1 : 0);
