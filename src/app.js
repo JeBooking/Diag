@@ -7,16 +7,52 @@
   var LGraph = window.LGraph;
   var LGraphCanvas = window.LGraphCanvas;
 
-  /* ---------- 状态面板 ---------- */
+  /* ---------- 状态面板（左下角长文本）+ PyCharm 风格提示气泡（右下角） ---------- */
   var statusEl = document.getElementById("status");
   function showStatus(text) {
     statusEl.textContent = text;
   }
-  window.DiagFlowUI = {
-    toast: function (msg) {
-      // 连接约束被拒绝时的瞬时提示：合并到状态面板顶部
-      showStatus("⛔ " + msg + "\n\n" + (statusEl.textContent || ""));
+  // 连接约束被拒绝等即时反馈：深色气泡 + 左侧彩色竖条，
+  // 右下角堆叠、4 秒自动消失，带滑入/淡出动画。
+  var TOAST_ACCENT = { info: "#4a88c7", warn: "#f0a742", error: "#ff5c57" };
+  function showToast(message, type) {
+    var host = document.getElementById("toast-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "toast-host";
+      document.body.appendChild(host);
     }
+    var el = document.createElement("div");
+    el.className = "toast toast-" + (TOAST_ACCENT[type] ? type : "info");
+    el.style.setProperty("--toast-accent", TOAST_ACCENT[type] || TOAST_ACCENT.info);
+
+    var bar = document.createElement("span");
+    bar.className = "toast-bar";
+    var text = document.createElement("span");
+    text.className = "toast-text";
+    text.textContent = message;
+    var close = document.createElement("span");
+    close.className = "toast-close";
+    close.textContent = "×";
+    close.onclick = function () { dismiss(el); };
+
+    el.appendChild(bar); el.appendChild(text); el.appendChild(close);
+    host.appendChild(el);
+    // 强制 reflow 后加显示类，触发滑入动画
+    void el.offsetWidth;
+    el.classList.add("toast-show");
+
+    var timer = null;
+    function dismiss(node) {
+      if (!node.parentNode) return;
+      if (timer) { clearTimeout(timer); timer = null; }
+      node.classList.remove("toast-show"); // 触发淡出动画
+      setTimeout(function () { if (node.parentNode) node.parentNode.removeChild(node); }, 300);
+    }
+    timer = setTimeout(function () { dismiss(el); }, 4000);
+  }
+  window.DiagFlowUI = {
+    toast: showToast
   };
 
   /* ---------- 画布 ---------- */
@@ -148,44 +184,35 @@
     ];
   }
 
-  // 节点的"可见矩形"（与 drawNodeShape 完全对齐）：
-  // 标题栏画在 pos 上方 30px（NODE_TITLE_HEIGHT），本体在 [pos.y, pos.y + size.h]
-  function nodeVisualRect(node) {
-    var th = LiteGraph.NODE_TITLE_HEIGHT;
-    if (node.flags && node.flags.collapsed) {
-      // 折叠态：只剩标题条，宽度按折叠后实测宽度（drawNode 里计算）
-      return {
-        x: node.pos[0],
-        y: node.pos[1] - th,
-        w: node._collapsed_width || LiteGraph.NODE_COLLAPSED_WIDTH,
-        h: th
-      };
+  // 隐藏 litegraph 默认槽位圆点：诊断节点的上下左右四个通用锚点由节点自绘
+  //（onDrawBackground）。包装 drawNode，绘制期间暂时清空 inputs/outputs，
+  // 库就不会在锚点位置叠加画出默认输入/输出小圆点。
+  var _origDrawNode = LGraphCanvas.prototype.drawNode;
+  var EMPTY_SLOTS = [];
+  LGraphCanvas.prototype.drawNode = function (node, ctx) {
+    if (node && typeof node.type === "string" && node.type.indexOf("diagnosis/") === 0 &&
+        !(node.flags && node.flags.collapsed)) {
+      var ins = node.inputs, outs = node.outputs;
+      node.inputs = EMPTY_SLOTS;
+      node.outputs = EMPTY_SLOTS;
+      try {
+        return _origDrawNode.apply(this, arguments);
+      } finally {
+        node.inputs = ins;
+        node.outputs = outs;
+      }
     }
-    return {
-      x: node.pos[0],
-      y: node.pos[1] - th,
-      w: node.size[0] + 1,
-      h: node.size[1] + th
-    };
+    return _origDrawNode.apply(this, arguments);
+  };
+
+  // 节点几何形状路径（由 diagnosis-nodes.js 提供，辉光与自绘形状保持同一轮廓）
+  function nodeShapePath(ctx, node) {
+    window.DiagFlowNodes.shapePath(ctx, node.type, node.pos[0], node.pos[1], node.size[0], node.size[1]);
   }
 
-  // 圆角矩形路径（半径与 LGraphCanvas.round_radius 默认值 8 一致）
-  function roundRectPath(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    if (typeof ctx.roundRect === "function") { ctx.roundRect(x, y, w, h, r); return; }
-    r = Math.min(r, w / 2, h / 2);
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-  }
-
-  // 真·辉光：沿节点圆角轮廓由内向外三层 shadow 光晕（宽→窄、淡→亮），
+  // 真·辉光：沿节点形状轮廓由内向外三层 shadow 光晕（宽→窄、淡→亮），
   // 再给本体叠一层淡色，让节点看起来"被点亮"，而不是套一个硬边框。
   function drawNodeGlow(ctx, node, color) {
-    var rect = nodeVisualRect(node);
     var passes = [
       { blur: 26, width: 5,   alpha: 0.20 }, // 最外层柔光
       { blur: 14, width: 2.5, alpha: 0.42 }, // 中层过渡
@@ -201,14 +228,14 @@
       ctx.globalAlpha = p.alpha;
       ctx.strokeStyle = color;
       ctx.lineWidth = p.width;
-      roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 8);
+      nodeShapePath(ctx, node);
       ctx.stroke();
     }
     // 本体染色：低透明度填充同一轮廓，节点本身像被光晕照亮
     ctx.shadowColor = "transparent";
     ctx.globalAlpha = 0.13;
     ctx.fillStyle = color;
-    roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 8);
+    nodeShapePath(ctx, node);
     ctx.fill();
     ctx.restore();
   }
@@ -319,7 +346,7 @@
   /* ---------- 节点面板添加 ---------- */
   function addNodeAtCenter(type) {
     if (type === "diagnosis/start" && graph.findNodesByType("diagnosis/start").length) {
-      alert("诊断流程只能有一个「诊断起点」节点。");
+      showToast("诊断流程只能有一个「诊断起点」节点", "warn");
       return;
     }
     var node = LiteGraph.createNode(type);
@@ -343,86 +370,70 @@
   }
 
   /* ---------- 加载示例：设备无法开机诊断 ---------- */
+  // 连线约定：从「右锚点」拖出连到「左锚点」（锚点序号：0上 1右 2下 3左）。
+  // 注意 anchor 序号只决定位置；输出/输入身份由拖拽行为决定。
   function loadSample() {
     graph.clear();
 
-    var start = LiteGraph.createNode("diagnosis/start");
-    start.pos = [40, 300];
+    var start = LiteGraph.createNode("diagnosis/start");   // 胶囊
+    start.pos = [60, 300];
     start.properties.scenario = "打印机无法开机诊断";
     graph.add(start);
 
-    var q1 = LiteGraph.createNode("diagnosis/question");
-    q1.pos = [330, 270];
+    var q1 = LiteGraph.createNode("diagnosis/question");   // 菱形
+    q1.pos = [320, 280];
     q1.properties.question = "电源指示灯是否亮起？";
-    q1.properties.answers = ["否", "是"];
-    rebuildQuestion(q1);
-    q1.title = "❓ " + q1.properties.question;
     graph.add(q1);
 
     var q2 = LiteGraph.createNode("diagnosis/question");
-    q2.pos = [640, 120];
+    q2.pos = [580, 130];
     q2.properties.question = "电源线是否连接牢固？";
-    q2.properties.answers = ["否", "是"];
-    rebuildQuestion(q2);
-    q2.title = "❓ " + q2.properties.question;
     graph.add(q2);
 
     var q3 = LiteGraph.createNode("diagnosis/question");
-    q3.pos = [640, 380];
+    q3.pos = [580, 400];
     q3.properties.question = "屏幕是否有任何显示？";
-    q3.properties.answers = ["否", "是"];
-    rebuildQuestion(q3);
-    q3.title = "❓ " + q3.properties.question;
     graph.add(q3);
 
-    var d1 = LiteGraph.createNode("diagnosis/leaf");
-    d1.pos = [960, 40];
+    var d1 = LiteGraph.createNode("diagnosis/leaf");       // 六边形
+    d1.pos = [840, 40];
     d1.properties.name = "电源线松动 / 损坏";
     d1.properties.confidence = 0.9;
     d1.properties.advice = "重新插紧或更换电源线";
     graph.add(d1);
 
     var d2 = LiteGraph.createNode("diagnosis/leaf");
-    d2.pos = [960, 150];
+    d2.pos = [840, 150];
     d2.properties.name = "电源适配器故障";
     d2.properties.confidence = 0.8;
     d2.properties.advice = "更换电源适配器";
     graph.add(d2);
 
     var d3 = LiteGraph.createNode("diagnosis/leaf");
-    d3.pos = [960, 330];
+    d3.pos = [840, 330];
     d3.properties.name = "主板 / 显示模块故障";
     d3.properties.confidence = 0.7;
     d3.properties.advice = "送修检测主板与显示模块";
     graph.add(d3);
 
     var d4 = LiteGraph.createNode("diagnosis/leaf");
-    d4.pos = [960, 440];
+    d4.pos = [840, 450];
     d4.properties.name = "系统软件卡死";
     d4.properties.confidence = 0.75;
     d4.properties.advice = "长按电源键 10 秒强制重启";
     graph.add(d4);
 
-    // 连线（插槽顺序与 answers 顺序一致）
-    start.connect(0, q1, 0); // 起点 -> 问诊1
-    q1.connect(0, q2, 0);    // 否
-    q1.connect(1, q3, 0);    // 是
-    q2.connect(0, d1, 0);    // 否
-    q2.connect(1, d2, 0);    // 是
-    q3.connect(0, d3, 0);    // 否
-    q3.connect(1, d4, 0);    // 是
+    // 连线：右锚点(1) → 左锚点(3)
+    start.connect(1, q1, 3);
+    q1.connect(1, q2, 3);
+    q1.connect(1, q3, 3);
+    q2.connect(1, d1, 3);
+    q2.connect(1, d2, 3);
+    q3.connect(1, d3, 3);
+    q3.connect(1, d4, 3);
 
     canvas.setDirty(true, true);
-    showStatus("已加载示例：「打印机无法开机」决策树。\n右键画布可继续添加节点，拖拽端口连线（受约束限制）。");
-  }
-
-  // 依据 answers 重算问诊节点的分支输出（示例构造时用）
-  function rebuildQuestion(node) {
-    while (node.outputs && node.outputs.length) node.removeOutput(0);
-    node.properties.answers.forEach(function (a, i) {
-      node.addOutput(a || ("选项" + (i + 1)), window.DiagFlowNodes.TYPE.BRANCH);
-    });
-    node.size[1] = Math.max(130, 60 + node.properties.answers.length * 18 + 40);
+    showStatus("已加载示例：「打印机无法开机」决策树。\n从节点边缘的锚点拖出连线（锚点不区分输入输出，拖出端即输出）；受约束限制。");
   }
 
   /* ---------- 压力测试：生成 ~100 节点的二叉决策树 ---------- */
@@ -433,7 +444,7 @@
     // 结构：起点(1) → 深度 0~5 问诊层（每层节点数 2^layer）→ 第 6 层 35 个 leaf
     // 总数 = 1 + 2 + 4 + 8 + 16 + 32 + 35 = 98 ≈ 100
     var COL_W = 220;          // 列间距
-    var ROW_H = 70;           // 行间距
+    var ROW_H = 130;          // 行间距（菱形高 110）
     var ORIGIN_X = 40;
     var ORIGIN_Y = 40;
     var byLayer = [];         // byLayer[layer] = [nodes...]
@@ -494,8 +505,8 @@
       } else {
         // 中间层 1:1 二叉展开
         for (var i2 = 0; i2 < parents.length; i2++) {
-          parents[i2].connect(0, children[i2 * 2], 0);     // 否
-          parents[i2].connect(1, children[i2 * 2 + 1], 0); // 是
+          parents[i2].connect(1, children[i2 * 2], 3);     // 右锚 → 左锚
+          parents[i2].connect(1, children[i2 * 2 + 1], 3);
         }
       }
     }
@@ -516,6 +527,9 @@
   }
 
   /* ---------- 验证流程结构 ---------- */
+  function nodeLabel(nd) {
+    return nd.properties.question || nd.properties.name || nd.properties.scenario || nd.title || nd.type;
+  }
   function validateGraph() {
     var issues = [];
     var starts = graph.findNodesByType("diagnosis/start");
@@ -528,7 +542,7 @@
       var stack = [starts[0]];
       while (stack.length) {
         var n = stack.pop();
-        if (reachable[n.id]) continue;
+        if (!n || reachable[n.id]) continue;
         reachable[n.id] = true;
         (n.outputs || []).forEach(function (o) {
           (o.links || []).forEach(function (id) {
@@ -540,20 +554,18 @@
     }
 
     nodes.forEach(function (nd) {
-      if (nd.type === "diagnosis/question") {
-        var total = (nd.outputs || []).length;
-        var connected = (nd.outputs || []).filter(function (o) { return (o.links || []).length > 0; }).length;
-        if (connected < total) issues.push("⚠ 问诊节点「" + nd.properties.question + "」有 " + (total - connected) + " 个答案分支未连接");
-        if (starts.length && !reachable[nd.id]) issues.push("⚠ 问诊节点「" + nd.properties.question + "」无法从起点到达");
-      } else if (nd.type === "diagnosis/leaf") {
-        var inp = nd.inputs[0];
-        var linked = inp && inp.link != null && inp.link !== -1 && inp.link !== undefined;
-        if (!linked) issues.push("⚠ 诊断结论「" + nd.properties.name + "」尚未接入流程");
-        if (starts.length && !reachable[nd.id]) issues.push("⚠ 诊断结论「" + nd.properties.name + "」无法从起点到达");
+      if (nd.type === "diagnosis/start") return;
+      var hasParent = (nd.inputs || []).some(function (inp) {
+        return inp && inp.link != null && inp.link !== -1;
+      });
+      if (!hasParent) {
+        issues.push("⚠ " + nodeLabel(nd) + " 未接入流程（无上游连接）");
+      } else if (starts.length && !reachable[nd.id]) {
+        issues.push("⚠ " + nodeLabel(nd) + " 无法从起点到达");
       }
     });
 
-    if (!issues.length) issues.push("✓ 诊断流程结构有效：单一入口、无环路、所有分支已闭合、结论均可达。");
+    if (!issues.length) issues.push("✓ 诊断流程结构有效：单一入口、无环路、所有节点均可达。");
     showStatus("【结构验证】\n" + issues.join("\n"));
   }
 
@@ -570,7 +582,7 @@
       var choice = outs[Math.floor(Math.random() * outs.length)];
       var link = graph.links[choice.links[0]];
       var next = graph.getNodeById(link.target_id);
-      path.push("→ 选「" + choice.name + "」  ⇐  " + (node.properties.question || node.title));
+      path.push("→ " + (node.properties.question || "…") + "  ⇒  " + nodeLabel(next));
       node = next;
     }
     var result = "";

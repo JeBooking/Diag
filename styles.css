@@ -128,7 +128,7 @@ html, body {
   position: absolute;
   left: 12px;
   bottom: 12px;
-  right: 12px;
+  max-width: 46%;
   max-height: 32%;
   margin: 0;
   padding: 12px 14px;
@@ -141,4 +141,67 @@ html, body {
   white-space: pre-wrap;
   overflow: auto;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+/* =============================================================
+ * PyCharm 风格提示气泡（右下角堆叠）
+ * ============================================================= */
+#toast-host {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 10000;
+  pointer-events: none;
+}
+.toast {
+  --toast-accent: #4a88c7;
+  display: flex;
+  align-items: center;
+  min-width: 240px;
+  max-width: 380px;
+  background: #2b2d30;
+  color: #dfe1e5;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  padding: 10px 12px 10px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateX(24px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: auto;
+  overflow: hidden;
+}
+.toast-show {
+  opacity: 1;
+  transform: translateX(0);
+}
+.toast-bar {
+  flex: 0 0 3px;
+  align-self: stretch;
+  background: var(--toast-accent);
+  margin-right: 12px;
+}
+.toast-text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.toast-close {
+  flex: 0 0 auto;
+  margin-left: 10px;
+  color: #9da0a8;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.toast-close:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
 }
