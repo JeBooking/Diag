@@ -152,22 +152,34 @@ const cCtx = ctxProxy();
 cont.onDrawBackground(cCtx, null);
 check("继续活动绘制固定文本", cCtx._calls.fillText >= 1);
 
-// ---- 双击编辑 ----
-const diagBefore = diag.properties.data;
+// ---- 双击编辑：onDblClick 触发就地文本框（不再用 prompt）----
+// 新行为：onDblClick 调用 DiagFlowUI.startTextEdit(node)，由 app.js 提供就地编辑。
+// 这里 mock startTextEdit 捕获调用，验证 onDblClick 正确委托。
+let startEditCalls = [];
+sandbox.DiagFlowUI = {
+  startTextEdit: (node) => { startEditCalls.push(node); }
+};
+
 diag.onDblClick();
-check("诊断节点双击编辑后 data 已更新", diag.properties.data === "_PROMPT_ANSWER_",
-  "got " + diag.properties.data);
+check("诊断节点双击委托 startTextEdit", startEditCalls.length === 1 && startEditCalls[0] === diag,
+  "calls=" + startEditCalls.length);
 
-const actBefore = action.properties.action;
+startEditCalls = [];
 action.onDblClick();
-check("诊断动作双击编辑后 action 已更新", action.properties.action === "_PROMPT_ANSWER_");
-check("诊断动作双击编辑后 followup 已更新", action.properties.followup === "_PROMPT_ANSWER_",
-  "got " + action.properties.followup);
+check("诊断动作双击委托 startTextEdit", startEditCalls.length === 1 && startEditCalls[0] === action);
 
-// 继续活动固定文本，onDblClick 应为 no-op（不弹 prompt 不报错）
+// 继续活动固定文本节点：onDblClick 应 no-op（不委托、不报错）
+startEditCalls = [];
 let threw = null;
 try { cont.onDblClick(); } catch (e) { threw = e; }
 check("继续活动 onDblClick 不报错", !threw, threw && threw.message);
+check("继续活动 onDblClick 不委托 startTextEdit（固定文本）", startEditCalls.length === 0);
+
+// 无 DiagFlowUI 时 onDblClick 不报错（降级静默）
+sandbox.DiagFlowUI = undefined;
+let threw2 = null;
+try { diag.onDblClick(); } catch (e) { threw2 = e; }
+check("无 DiagFlowUI 时 onDblClick 不报错", !threw2, threw2 && threw2.message);
 
 // ---- 形状路径类型 ----
 check("shapePath 支持 8 种类型（不抛错）", (() => {

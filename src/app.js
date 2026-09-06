@@ -82,6 +82,23 @@
   var DBL_TIME = 300;   // 与 litegraph 5958 行时间窗一致
   var DBL_DIST2 = 100;  // 10px 位置容差（平方）
   LGraphCanvas.prototype.processMouseDown = function (e) {
+    // === 右键拖拽画布 ===
+    // 覆盖网页默认右键手势：右键在画布内任意位置（空白/节点上）按下都进入
+    // 「平移画布」，不再弹出 litegraph 的右键菜单（processContextMenu）。
+    // 做法：把右键降级为「拖动画布」手势——设置 dragging_canvas，并记录
+    // last_mouse 供 processMouseMove 计算 delta；随后 processMouseMove 的
+    // `else if (this.dragging_canvas)` 分支会平移 ds.offset，processMouseUp
+    // 的 `else if (e.which == 3)` 分支会复位 dragging_canvas。全程不进入
+    // 原版右键菜单分支（6351 行的 `e.which == 3 || pointer_is_double`）。
+    if (e && e.which === 3) {
+      this.dragging_canvas = true;
+      this.last_mouse = [e.clientX, e.clientY];
+      this.last_mouseclick = 0;   // 右键不参与双击判定
+      if (this.__dblState) this.__dblState.consumed = true;
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+      return false;
+    }
     if (e && typeof e.clientX === "number") {
       var st = this.__dblState || (this.__dblState = { t: -1e9, x: 0, y: 0, consumed: true });
       var now = LiteGraph.getTime();
@@ -166,6 +183,127 @@
   // basic/*、events/*、widget/* 等节点对「诊断决策树」无用，全部从菜单隐藏）
   canvas.filter = "diagnosis";
   graph.start();
+
+  /* ---------- 就地文本编辑（PPT/draw.io 风格文本框，替代 window.prompt） ---------- */
+  // 双击节点 → 在节点位置覆盖一个可编辑的 HTML 文本框；Enter 提交、Esc 取消、
+  // 点击框外（含画布/其他节点）提交。编辑期间不干扰画布拖拽/连线（文本框自身
+  // 拦截 mousedown 阻止冒泡）。
+  var textEdit = null; // 当前编辑会话 { node, wrap, main, sub, field, extraField }
+
+  function closeTextEdit(commit) {
+    if (!textEdit) return;
+    var s = textEdit;
+    textEdit = null;
+    if (commit) {
+      var def = window.DiagFlowNodes.NODE_DEFS[s.node.type];
+      if (def.textField && s.main) {
+        s.node.properties[def.textField] = s.main.value;
+      }
+      if (def.extraField && s.sub) {
+        s.node.properties[def.extraField] = s.sub.value;
+      }
+      s.node.setDirtyCanvas(true, false);
+      canvas.setDirty(true, true);
+    }
+    if (s.wrap.parentNode) s.wrap.parentNode.removeChild(s.wrap);
+  }
+
+  function startTextEdit(node) {
+    var def = window.DiagFlowNodes.NODE_DEFS[node.type];
+    if (!def || !def.textField) return;
+    // 已有编辑会话：先提交旧的
+    if (textEdit) closeTextEdit(true);
+
+    var wrap = document.createElement("div");
+    wrap.className = "node-text-edit";
+    wrap.style.position = "absolute";
+    wrap.style.pointerEvents = "auto";
+    wrap.style.zIndex = "10001";
+
+    var main = document.createElement("textarea");
+    main.className = "node-text-edit-main";
+    main.value = node.properties[def.textField] || "";
+    main.placeholder = "输入文本…";
+    main.rows = 3;
+    main.spellcheck = false;
+
+    var sub = null;
+    if (def.extraField) {
+      sub = document.createElement("input");
+      sub.type = "text";
+      sub.className = "node-text-edit-sub";
+      sub.value = node.properties[def.extraField] || "";
+      sub.placeholder = "后续动作（持久传递）";
+      sub.spellcheck = false;
+    }
+
+    wrap.appendChild(main);
+    if (sub) wrap.appendChild(sub);
+
+    // 定位：节点画布坐标 → 屏幕坐标，覆盖在节点主体上方（略外扩便于输入）
+    var pad = 6;
+    var topleft = canvas.convertCanvasToOffset([node.pos[0], node.pos[1]]);
+    var sizePx = [node.size[0] * canvas.ds.scale, node.size[1] * canvas.ds.scale];
+    wrap.style.left = (topleft[0] - pad) + "px";
+    wrap.style.top = (topleft[1] - pad) + "px";
+    wrap.style.width = (sizePx[0] + pad * 2) + "px";
+    wrap.style.minHeight = (sizePx[1] + pad * 2) + "px";
+
+    var host = document.querySelector(".canvas-wrap") || document.body;
+    host.appendChild(wrap);
+
+    textEdit = { node: node, wrap: wrap, main: main, sub: sub };
+
+    // 阻断事件冒泡，避免画布收到拖拽/连线事件
+    function swallow(e) { if (e.stopPropagation) e.stopPropagation(); }
+
+    wrap.addEventListener("mousedown", swallow);
+    wrap.addEventListener("mouseup", swallow);
+    wrap.addEventListener("dblclick", swallow);
+    wrap.addEventListener("wheel", function (e) { if (e.stopPropagation) e.stopPropagation(); });
+
+    // 提交：Enter（主文本框，不带 Shift）；副输入框 Enter 也提交
+    main.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); closeTextEdit(true); }
+      else if (e.key === "Escape") { e.preventDefault(); closeTextEdit(false); }
+      else if (e.key === "Enter" && e.shiftKey && sub) { sub.focus(); }
+    });
+    if (sub) {
+      sub.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); closeTextEdit(true); }
+        else if (e.key === "Escape") { e.preventDefault(); closeTextEdit(false); }
+      });
+    }
+
+    // 点击框外提交（document 捕获阶段，但排除本框内部）
+    setTimeout(function () {
+      document.addEventListener("mousedown", outsideCommit, true);
+    }, 0);
+    function outsideCommit(e) {
+      if (!textEdit) { document.removeEventListener("mousedown", outsideCommit, true); return; }
+      if (textEdit.wrap.contains(e.target)) return; // 框内点击放行
+      e.stopPropagation();
+      e.preventDefault();
+      closeTextEdit(true);
+      document.removeEventListener("mousedown", outsideCommit, true);
+    }
+
+    main.focus();
+    main.select();
+  }
+
+  // 暴露给 diagnosis-nodes.js 的 onDblClick 调用
+  window.DiagFlowUI.startTextEdit = startTextEdit;
+
+  // 覆盖网页右键手势：画布容器内右键一律阻止浏览器默认菜单（拖拽画布用）
+  var canvasWrap = document.querySelector(".canvas-wrap");
+  if (canvasWrap) {
+    canvasWrap.addEventListener("contextmenu", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+
 
   // 单一入口约束：全局拦截，右键菜单 / 面板添加都生效
   graph.onNodeAdded = function (node) {

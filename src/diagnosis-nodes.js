@@ -403,23 +403,13 @@
       drawNodeLabel(ctx, text, w, h);
     };
 
-    // 双击编辑文本（参考 draw.io/亿图图示的文本编辑交互）
+    // 双击编辑文本：就地文本框（PPT/draw.io 风格），不再用 window.prompt。
+    // 由 app.js 提供 DiagFlowUI.startTextEdit(node)，在节点上覆盖一个可编辑文本框。
     Node.prototype.onDblClick = function () {
       var def2 = NODE_DEFS[this.type];
       if (!def2.textField) return; // 固定文本节点（继续活动）不可编辑
-      var label = def2.title;
-      var next = window.prompt("编辑" + label + "文本：", this.properties[def2.textField] || "");
-      if (next !== null) {
-        this.properties[def2.textField] = next;
-        this.setDirtyCanvas(true, false);
-      }
-      // 诊断动作额外编辑「后续动作」
-      if (def2.extraField) {
-        var follow = window.prompt("编辑「后续动作」（会持久传递到后续诊断链路）：", this.properties[def2.extraField] || "");
-        if (follow !== null) {
-          this.properties[def2.extraField] = follow;
-          this.setDirtyCanvas(true, false);
-        }
+      if (global.DiagFlowUI && typeof global.DiagFlowUI.startTextEdit === "function") {
+        global.DiagFlowUI.startTextEdit(this);
       }
     };
 

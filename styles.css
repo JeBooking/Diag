@@ -154,8 +154,54 @@ html, body {
 }
 
 /* =============================================================
- * PyCharm 风格提示气泡（右下角堆叠）
+ * 就地文本编辑（PPT 风格文本框，替代 prompt）
  * ============================================================= */
+.node-text-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(31, 41, 51, 0.96);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
+}
+.node-text-edit-main {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  border: 1px solid #46556f;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f2933;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 8px;
+  box-sizing: border-box;
+  outline: none;
+}
+.node-text-edit-main:focus {
+  border-color: #26c6da;
+  box-shadow: 0 0 0 2px rgba(38, 198, 218, 0.35);
+}
+.node-text-edit-sub {
+  width: 100%;
+  border: 1px solid #46556f;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f2933;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 12px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  outline: none;
+}
+.node-text-edit-sub:focus {
+  border-color: #26c6da;
+  box-shadow: 0 0 0 2px rgba(38, 198, 218, 0.35);
+}
+
 #toast-host {
   position: fixed;
   right: 16px;

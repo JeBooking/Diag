@@ -43,7 +43,7 @@ function makeEl(tag) {
     getContext() { if (!this._ctx) this._ctx = makeCtx(); return this._ctx; },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 900, height: 600 }),
     addEventListener() {}, removeEventListener() {},
-    focus() {}, blur() {}, click() {}, setAttribute() {}, getAttribute: () => null,
+    focus() {}, blur() {}, click() {}, select() {}, setAttribute() {}, getAttribute: () => null,
     querySelector: () => makeEl(), querySelectorAll: () => [],
     appendChild(c) { c.parentNode = el; el.children.push(c); return c; },
     removeChild(c) { const i = el.children.indexOf(c); if (i >= 0) el.children.splice(i, 1); c.parentNode = null; return c; },
@@ -69,7 +69,15 @@ const sandbox = {
     activeElement: null,
     getElementById: (id) => ids[id] || null,
     querySelector: (sel) => {
-      if (sel === ".canvas-wrap") return { clientWidth: 900, clientHeight: 600 };
+      if (sel === ".canvas-wrap") {
+        if (!ids["canvas-wrap"]) {
+          var cw = makeEl("div");
+          cw.clientWidth = 900; cw.clientHeight = 600;
+          cw.offsetWidth = 900; cw.offsetHeight = 600;
+          ids["canvas-wrap"] = cw;
+        }
+        return ids["canvas-wrap"];
+      }
       if (sel === "#graph-canvas") return ids["graph-canvas"];
       return makeEl("div");
     },
@@ -122,6 +130,10 @@ function check(name, cond, extra) {
 }
 function ev(x, y) {
   return { clientX: x, clientY: y, canvasX: x, canvasY: y, which: 1, button: 0,
+    preventDefault() {}, stopPropagation() {} };
+}
+function evBtn(x, y, which, button) {
+  return { clientX: x, clientY: y, canvasX: x, canvasY: y, which: which, button: button,
     preventDefault() {}, stopPropagation() {} };
 }
 function press(x, y) { canvas._mousedown_callback(ev(x, y)); }
@@ -377,6 +389,79 @@ ctxMenuCalls = 0;
 press(op[0], op[1]);
 check("双击后的第三击为正常单击（不弹右键菜单）", ctxMenuCalls === 0,
   "processContextMenu 被调了 " + ctxMenuCalls + " 次");
+
+console.log("== 10. 右键拖拽画布（覆盖网页右键手势） ==");
+// 右键按下：应进入拖动画布而非弹右键菜单
+syncVisible();
+canvas.processContextMenu = function () { ctxMenuCalls++; };
+ctxMenuCalls = 0;
+canvas.dragging_canvas = false;
+canvas.__dblState = null;
+
+// 右键在节点上按下（任意位置都应拖画布，而非选中节点/弹菜单）
+const rightNode = P2;
+const rp = [rightNode.pos[0] + rightNode.size[0] * 0.5, rightNode.pos[1] + rightNode.size[1] * 0.5];
+const beforeOffset = [canvas.ds.offset[0], canvas.ds.offset[1]];
+canvas._mousedown_callback(evBtn(rp[0], rp[1], 3, 2));
+check("右键按下后 dragging_canvas = true", canvas.dragging_canvas === true,
+  "dragging_canvas=" + canvas.dragging_canvas);
+check("右键按下不弹右键菜单", ctxMenuCalls === 0, "processContextMenu 被调了 " + ctxMenuCalls + " 次");
+check("右键按下后 last_mouse 已记录", canvas.last_mouse[0] === rp[0] && canvas.last_mouse[1] === rp[1]);
+
+// 右键移动 → 画布平移（模拟 processMouseMove 的 dragging_canvas 分支）
+const moveEv = { clientX: rp[0] + 30, clientY: rp[1] + 20, canvasX: rp[0] + 30, canvasY: rp[1] + 20,
+  which: 3, button: 2, preventDefault() {}, stopPropagation() {} };
+canvas._mousemove_callback(moveEv);
+check("右键移动后画布偏移量变化（30,20 像素）",
+  Math.abs((canvas.ds.offset[0] - beforeOffset[0]) * canvas.ds.scale - 30) < 0.5 &&
+  Math.abs((canvas.ds.offset[1] - beforeOffset[1]) * canvas.ds.scale - 20) < 0.5,
+  "offset delta=" + ((canvas.ds.offset[0] - beforeOffset[0]) * canvas.ds.scale) + "," + ((canvas.ds.offset[1] - beforeOffset[1]) * canvas.ds.scale));
+
+// 右键松开 → 停止拖拽
+canvas._mouseup_callback(evBtn(rp[0] + 30, rp[1] + 20, 3, 2));
+check("右键松开后 dragging_canvas = false", canvas.dragging_canvas === false);
+
+// 右键空白处按下同样拖画布（不是弹「添加节点」菜单）
+ctxMenuCalls = 0;
+canvas.dragging_canvas = false;
+canvas._mousedown_callback(evBtn(30, 30, 3, 2));
+check("右键空白处按下也拖画布（不弹菜单）", canvas.dragging_canvas === true && ctxMenuCalls === 0);
+
+// 左键仍走原逻辑：右键拖拽不应破坏左键
+canvas.dragging_canvas = false;
+canvas._mouseup_callback(evBtn(30, 30, 3, 2)); // 复位
+
+console.log("== 11. 就地文本编辑（PPT 风格文本框） ==");
+syncVisible();
+const editNode = mkNode("diagnosis/diag", 300, 300);
+editNode.properties.data = "原始排查项";
+
+// 触发就地编辑
+sandbox.DiagFlowUI.startTextEdit(editNode);
+
+// 文本框已创建并挂到 canvas-wrap
+const cw = ids["canvas-wrap"];
+check("就地文本框已挂载到画布容器", cw.children.some((c) => c.className === "node-text-edit"),
+  "children=" + cw.children.length);
+const editWrap = cw.children.find((c) => c.className === "node-text-edit");
+check("文本框包含主 textarea", !!editWrap && editWrap.children.length >= 1);
+const mainTA = editWrap && editWrap.children[0];
+check("主文本框预填当前文本", mainTA && mainTA.value === "原始排查项", "value=" + (mainTA && mainTA.value));
+
+// 修改文本并模拟提交（再次 startTextEdit 触发旧会话提交）
+mainTA.value = "新的排查项文本";
+sandbox.DiagFlowUI.startTextEdit(editNode);
+check("再次编辑提交旧会话：data 已写回", editNode.properties.data === "新的排查项文本",
+  "data=" + editNode.properties.data);
+
+// 验证固定文本节点（继续活动）不触发编辑
+const contNode = mkNode("diagnosis/continue", 600, 300);
+let contEditCalled = false;
+const origStartEdit = sandbox.DiagFlowUI.startTextEdit;
+sandbox.DiagFlowUI.startTextEdit = function (n) { contEditCalled = true; };
+contNode.onDblClick();
+check("继续活动双击不触发编辑", contEditCalled === false);
+sandbox.DiagFlowUI.startTextEdit = origStartEdit;
 
 console.log("\n结果: " + pass + " 通过 / " + fail + " 失败");
 process.exit(fail ? 1 : 0);
