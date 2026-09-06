@@ -1,0 +1,5 @@
+# WorkBuddy 会话/记忆数据（非项目源码）
+.workbuddy/
+
+# 临时测试脚本
+*.test.js

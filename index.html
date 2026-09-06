@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="NtfDTRDmeCJBwOj5PreskX">
+<head data-page-node-id="fWhy50VdMxF1hGojI0RaMG">
+  <meta charset="UTF-8" data-page-node-id="9BFzsiFlFzRRUJv5oiIHVj" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="lYdrhAQMZ1WxUJL9zHCtav" />
+  <title>诊断决策树流程图编辑器</title>
+  <link rel="stylesheet" href="lib/litegraph.css" data-page-node-id="ECOHSCX0dr34mJzUEKRt2s" />
+  <link rel="stylesheet" href="styles.css" data-page-node-id="NZbw6PYqcrqrt2ETAc2aju" />
+</head>
+<body data-page-node-id="3u1fVHB0Hxeoa3AUyF6MC4">
+  <header class="toolbar" data-page-node-id="CHg50O7wHYvQvB7GFS9pak">
+    <span class="brand" data-page-node-id="khC71QXi0uvPBX2CZdkWi0">🌳 诊断决策树编辑器</span>
+    <button id="btn-sample" data-page-node-id="YliuM4dSg5TLbcCKqdkKj1">加载示例</button>
+    <button id="btn-stress" data-page-node-id="abcStressBtn123">压力测试（100 节点）</button>
+    <button id="btn-clear" data-page-node-id="E0kQtHmYBrAgnFCeEAS2O2">清空</button>
+    <button id="btn-validate" data-page-node-id="dAFewDWxxwVaYTF08Jkifm">验证流程</button>
+    <button id="btn-infer" data-page-node-id="mRC3paYQfnFuEVjKaN6xQ8">推理演示</button>
+    <button id="btn-export" data-page-node-id="90yoErynw4kCjw9vcnvd7h">导出 JSON</button>
+    <button id="btn-import" data-page-node-id="L87PslWKa9R1ECMu7lbEDr">导入 JSON</button>
+    <span class="hint" data-page-node-id="Dpe4GWOd3UOM516rFCLBUu">右键画布添加节点 · 双击空白处搜索添加节点（点击框外空白处关闭）· 在节点上任意位置按住拖动即可移动（整节点可拖）· 端口连线受约束 · 双击节点编辑文本 · 问诊节点用 ＋/－ 按钮增减答案 · 单击节点查看流向高亮</span>
+  </header>
+
+  <main class="layout" data-page-node-id="Tr6lsFwSw3D6nyHhEHFgr0">
+    <aside class="palette" data-page-node-id="8jzpmqjB4aoTAXCM7hra0W">
+      <h3 data-page-node-id="ha7p6aL8IPTBuIhbYuoSiE">节点面板</h3>
+      <button class="palette-btn start" data-type="diagnosis/start" data-page-node-id="YdwzFzi2EMQmwXBKMXfAXY">＋ 诊断起点</button>
+      <p class="desc" data-page-node-id="8MOTvZCktUCKG7B0KiCP52">决策树唯一入口 · 0 输入 / 1 输出</p>
+      <button class="palette-btn question" data-type="diagnosis/question" data-page-node-id="miTn7j3ACyazSUgaZemxPw">＋ 问诊节点</button>
+      <p class="desc" data-page-node-id="PQrMeaHhzRrEbgPxYOYjRY">提出判断问题 · 可动态增减答案分支</p>
+      <button class="palette-btn leaf" data-type="diagnosis/leaf" data-page-node-id="RzHTcLCv9EETNbMxvheHGd">＋ 诊断结论</button>
+      <p class="desc" data-page-node-id="ng1M3XnLa0GG7mAPEkM1py">叶子节点 · 给出结论与处置建议</p>
+
+      <div class="legend" data-page-node-id="2bZjXlC5tCtRSrNjWuGUwC">
+        <h4 data-page-node-id="T5KenvZaboOTK5ntqmc7Zd">约束规则</h4>
+        <ul data-page-node-id="Dwufzxw5uIMhe1b7L9hrDY">
+          <li data-page-node-id="VOd5RpivioqOZQhR1oemVn">单一入口：只能有一个「诊断起点」</li>
+          <li data-page-node-id="jXPFI2ekAONEnBndFDe240">单父节点：每个节点仅一条上游</li>
+          <li data-page-node-id="C4dSbAfcUQfqgt96KSSxph">无环路：决策树必须为有向无环图</li>
+          <li data-page-node-id="K7RnF1qkKQIWSv09H73cJ6">叶子终止：结论节点无输出</li>
+          <li data-page-node-id="9XxXSysiVWQj4XGQ9zmnLY">类型校验：端口类型需匹配（连线时变暗即不兼容）</li>
+        </ul>
+        <h4 data-page-node-id="p30aLHALya2uGTsgfWczlk">端口类型</h4>
+        <ul class="types" data-page-node-id="SiloUmZllxDg3P2MeBpANU">
+          <li data-page-node-id="8zdt8C7mwzTjODoWKykcU1"><span class="chip entry" data-page-node-id="LKYURzYTY1A9fCBkPIHb3i"></span> entry · 起点输出</li>
+          <li data-page-node-id="Ht4mDDZXFqn4BpvVwTkSon"><span class="chip branch" data-page-node-id="hAvgCBSwj6XgW9oukXRF1H"></span> branch · 问诊分支</li>
+          <li data-page-node-id="bXKwZ1uFfzftLEqItqaFkY"><span class="chip flow" data-page-node-id="GODLohdD7hrBLJzJ1M16B6"></span> flow · 通用输入</li>
+        </ul>
+        <h4>选中高亮</h4>
+        <ul class="types">
+          <li><span class="chip" style="background:rgba(229,57,53,0.95)"></span> 选中节点的父节点（上游）发红光</li>
+          <li><span class="chip" style="background:rgba(67,160,71,0.95)"></span> 选中节点的子节点（下游）发绿光</li>
+          <li><span class="chip" style="background:#26c6da"></span> 连线呈青色流向动画（源→目标）</li>
+          <li>辉光沿节点轮廓发散，折叠后自动跟随标题条；节点外观（图标/配色）已锁定</li>
+        </ul>
+      </div>
+    </aside>
+
+    <section class="canvas-wrap" data-page-node-id="fLQelKPW3DqmUXpiQBS7U9">
+      <canvas id="graph-canvas" data-page-node-id="7SqpvTuZavVSihQ3kDvH4q"></canvas>
+      <pre id="status" class="status" data-page-node-id="CPJAe8fIzDcX2rju434NlH"></pre>
+    </section>
+  </main>
+
+  <script src="lib/litegraph.js"></script>
+  <script src="src/diagnosis-nodes.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
