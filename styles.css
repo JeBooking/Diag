@@ -75,9 +75,14 @@ html, body {
   cursor: pointer;
   color: #fff;
 }
-.palette-btn.start { background: #2e7d32; border-color: #1b5e20; }
-.palette-btn.question { background: #1565c0; border-color: #0d47a1; }
-.palette-btn.leaf { background: #ef6c00; border-color: #e65100; }
+.palette-btn.start { background: #00897b; border-color: #004d40; }
+.palette-btn.diag { background: #26a69a; border-color: #00695c; }
+.palette-btn.action { background: #1e88e5; border-color: #0d47a1; }
+.palette-btn.conclusion { background: #fb8c00; border-color: #e65100; }
+.palette-btn.measure { background: #8e24aa; border-color: #4a148c; }
+.palette-btn.resolved { background: #43a047; border-color: #1b5e20; }
+.palette-btn.escalate { background: #e53935; border-color: #b71c1c; }
+.palette-btn.continue { background: #546e7a; border-color: #263238; }
 .palette-btn:hover { filter: brightness(1.08); }
 .palette .desc {
   margin: 0 0 14px 4px;
@@ -107,9 +112,14 @@ html, body {
 .chip {
   width: 14px; height: 14px; border-radius: 3px; display: inline-block;
 }
-.chip.entry { background: #2e7d32; }
-.chip.branch { background: #1565c0; }
-.chip.flow { background: #ef6c00; }
+.chip.entry { background: #00897b; }
+.chip.diag { background: #26a69a; }
+.chip.action { background: #1e88e5; }
+.chip.conclusion { background: #fb8c00; }
+.chip.measure { background: #8e24aa; }
+.chip.resolved { background: #43a047; }
+.chip.escalate { background: #e53935; }
+.chip.continue { background: #546e7a; }
 
 /* ---------- 画布 ---------- */
 .canvas-wrap {

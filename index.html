@@ -24,33 +24,50 @@
     <aside class="palette" data-page-node-id="8jzpmqjB4aoTAXCM7hra0W">
       <h3 data-page-node-id="ha7p6aL8IPTBuIhbYuoSiE">节点面板</h3>
       <button class="palette-btn start" data-type="diagnosis/start" data-page-node-id="YdwzFzi2EMQmwXBKMXfAXY">＋ 诊断起点</button>
-      <p class="desc" data-page-node-id="8MOTvZCktUCKG7B0KiCP52">决策树唯一入口 · 0 输入 / 1 输出</p>
-      <button class="palette-btn question" data-type="diagnosis/question" data-page-node-id="miTn7j3ACyazSUgaZemxPw">＋ 问诊节点</button>
-      <p class="desc" data-page-node-id="PQrMeaHhzRrEbgPxYOYjRY">提出判断问题 · 可动态增减答案分支</p>
-      <button class="palette-btn leaf" data-type="diagnosis/leaf" data-page-node-id="RzHTcLCv9EETNbMxvheHGd">＋ 诊断结论</button>
-      <p class="desc" data-page-node-id="ng1M3XnLa0GG7mAPEkM1py">叶子节点 · 给出结论与处置建议</p>
+      <p class="desc" data-page-node-id="8MOTvZCktUCKG7B0KiCP52">流程唯一入口 · 只能接诊断节点 / 诊断动作</p>
+      <button class="palette-btn diag" data-type="diagnosis/diag" data-page-node-id="miTn7j3ACyazSUgaZemxPw">＋ 诊断节点</button>
+      <p class="desc" data-page-node-id="PQrMeaHhzRrEbgPxYOYjRY">呈现排查数据 · 不改机台状态</p>
+      <button class="palette-btn action" data-type="diagnosis/action" data-page-node-id="RzHTcLCv9EETNbMxvheHGd">＋ 诊断动作</button>
+      <p class="desc" data-page-node-id="ng1M3XnLa0GG7mAPEkM1py">执行机台动作 · 可带「后续动作」持久传递</p>
+      <button class="palette-btn conclusion" data-type="diagnosis/conclusion" data-page-node-id="dQ1ConclBtn">＋ 结论节点</button>
+      <p class="desc" data-page-node-id="dQ1ConclDesc">排查结论（纯文本）· 只能接措施</p>
+      <button class="palette-btn measure" data-type="diagnosis/measure" data-page-node-id="dQ1MeasureBtn">＋ 措施节点</button>
+      <p class="desc" data-page-node-id="dQ1MeasureDesc">结论之后执行的措施 · 只能接问题解决</p>
+      <button class="palette-btn resolved" data-type="diagnosis/resolved" data-page-node-id="dQ1ResolvedBtn">＋ 问题解决</button>
+      <p class="desc" data-page-node-id="dQ1ResolvedDesc">诊断+措施后问题是否解决 · 接继续活动/上升</p>
+      <button class="palette-btn escalate" data-type="diagnosis/escalate" data-page-node-id="dQ1EscBtn">＋ 上升</button>
+      <p class="desc" data-page-node-id="dQ1EscDesc">缺方向/缺手段或措施无效 · 链路终点</p>
+      <button class="palette-btn continue" data-type="diagnosis/continue" data-page-node-id="dQ1ContBtn">＋ 继续活动</button>
+      <p class="desc" data-page-node-id="dQ1ContDesc">问题解决后走向继续活动 · 固定文本</p>
 
       <div class="legend" data-page-node-id="2bZjXlC5tCtRSrNjWuGUwC">
-        <h4 data-page-node-id="T5KenvZaboOTK5ntqmc7Zd">约束规则</h4>
+        <h4 data-page-node-id="T5KenvZaboOTK5ntqmc7Zd">连接约束（连线时严格拦截）</h4>
         <ul data-page-node-id="Dwufzxw5uIMhe1b7L9hrDY">
           <li data-page-node-id="VOd5RpivioqOZQhR1oemVn">单一入口：只能有一个「诊断起点」</li>
           <li data-page-node-id="jXPFI2ekAONEnBndFDe240">单父节点：每个节点仅一条上游</li>
           <li data-page-node-id="C4dSbAfcUQfqgt96KSSxph">无环路：决策树必须为有向无环图</li>
-          <li data-page-node-id="K7RnF1qkKQIWSv09H73cJ6">叶子终止：结论节点无输出</li>
-          <li data-page-node-id="9XxXSysiVWQj4XGQ9zmnLY">类型校验：端口类型需匹配（连线时变暗即不兼容）</li>
+          <li data-page-node-id="K7RnF1qkKQIWSv09H73cJ6">诊断节点 / 诊断动作 → 诊断节点、诊断动作、结论、问题解决、上升（<b>不能直接接措施</b>）</li>
+          <li data-page-node-id="9XxXSysiVWQj4XGQ9zmnLY">结论节点 → 只能接措施；措施 → 只能接问题解决</li>
+          <li data-page-node-id="dQ1Rule6">问题解决 → 继续活动（已解决）或 上升（未解决）</li>
+          <li data-page-node-id="dQ1Rule7">链路末端必须接到「问题解决」或「上升」（<b>保存时统一校验</b>）</li>
         </ul>
-        <h4 data-page-node-id="p30aLHALya2uGTsgfWczlk">端口类型</h4>
+        <h4 data-page-node-id="p30aLHALya2uGTsgfWczlk">节点类型</h4>
         <ul class="types" data-page-node-id="SiloUmZllxDg3P2MeBpANU">
-          <li data-page-node-id="8zdt8C7mwzTjODoWKykcU1"><span class="chip entry" data-page-node-id="LKYURzYTY1A9fCBkPIHb3i"></span> entry · 起点输出</li>
-          <li data-page-node-id="Ht4mDDZXFqn4BpvVwTkSon"><span class="chip branch" data-page-node-id="hAvgCBSwj6XgW9oukXRF1H"></span> branch · 问诊分支</li>
-          <li data-page-node-id="bXKwZ1uFfzftLEqItqaFkY"><span class="chip flow" data-page-node-id="GODLohdD7hrBLJzJ1M16B6"></span> flow · 通用输入</li>
+          <li data-page-node-id="8zdt8C7mwzTjODoWKykcU1"><span class="chip entry" data-page-node-id="LKYURzYTY1A9fCBkPIHb3i"></span> 诊断起点（胶囊）</li>
+          <li data-page-node-id="Ht4mDDZXFqn4BpvVwTkSon"><span class="chip diag" data-page-node-id="hAvgCBSwj6XgW9oukXRF1H"></span> 诊断节点（圆角矩形）</li>
+          <li data-page-node-id="bXKwZ1uFfzftLEqItqaFkY"><span class="chip action" data-page-node-id="GODLohdD7hrBLJzJ1M16B6"></span> 诊断动作（圆角矩形）</li>
+          <li data-page-node-id="dQ1T4"><span class="chip conclusion" data-page-node-id="dQ1T4c"></span> 结论节点（菱形）</li>
+          <li data-page-node-id="dQ1T5"><span class="chip measure" data-page-node-id="dQ1T5c"></span> 措施节点（矩形）</li>
+          <li data-page-node-id="dQ1T6"><span class="chip resolved" data-page-node-id="dQ1T6c"></span> 问题解决（胶囊）</li>
+          <li data-page-node-id="dQ1T7"><span class="chip escalate" data-page-node-id="dQ1T7c"></span> 上升（梯形）</li>
+          <li data-page-node-id="dQ1T8"><span class="chip continue" data-page-node-id="dQ1T8c"></span> 继续活动（圆角矩形）</li>
         </ul>
         <h4>选中高亮</h4>
         <ul class="types">
           <li><span class="chip" style="background:rgba(229,57,53,0.95)"></span> 选中节点的父节点（上游）发红光</li>
           <li><span class="chip" style="background:rgba(67,160,71,0.95)"></span> 选中节点的子节点（下游）发绿光</li>
           <li><span class="chip" style="background:#26c6da"></span> 连线呈青色流向动画（源→目标）</li>
-          <li>辉光沿节点轮廓发散，折叠后自动跟随标题条；节点外观（图标/配色）已锁定</li>
+          <li>辉光沿节点轮廓发散，折叠后自动跟随标题条；节点外观（形状/配色）已锁定</li>
         </ul>
       </div>
     </aside>

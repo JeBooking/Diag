@@ -355,7 +355,7 @@
   /* ---------- 双击空白弹出的搜索框：点击框外任意位置关闭 ---------- */
   // 接管搜索框结果列表：litegraph 内置列表不走 canvas.filter，会混入全部 176 个
   // 内置节点；用 onSearchBox 钩子只返回诊断节点（支持按类型名或中文标题搜索）。
-  var DIAG_TYPES = ["diagnosis/start", "diagnosis/question", "diagnosis/leaf"];
+  var DIAG_TYPES = window.DiagFlowNodes.types; // 8 种诊断节点
   canvas.onSearchBox = function (helper, str) {
     str = (str || "").toLowerCase();
     return DIAG_TYPES.filter(function (t) {
@@ -392,143 +392,147 @@
     showStatus("画布已清空。点击「加载示例」可恢复演示流程。");
   }
 
-  /* ---------- 加载示例：设备无法开机诊断 ---------- */
+  /* ---------- 加载示例：设备无法开机诊断（完整排查闭环） ---------- */
   // 连线约定：从「右锚点」拖出连到「左锚点」（锚点序号：0上 1右 2下 3左）。
   // 注意 anchor 序号只决定位置；输出/输入身份由拖拽行为决定。
   function loadSample() {
     graph.clear();
 
-    var start = LiteGraph.createNode("diagnosis/start");   // 胶囊
-    start.pos = [60, 300];
-    start.properties.scenario = "打印机无法开机诊断";
+    var start = LiteGraph.createNode("diagnosis/start");
+    start.pos = [60, 380];
+    start.properties.scenario = "设备无法开机诊断";
     graph.add(start);
 
-    var q1 = LiteGraph.createNode("diagnosis/question");   // 菱形
-    q1.pos = [320, 280];
-    q1.properties.question = "电源指示灯是否亮起？";
-    graph.add(q1);
-
-    var q2 = LiteGraph.createNode("diagnosis/question");
-    q2.pos = [580, 130];
-    q2.properties.question = "电源线是否连接牢固？";
-    graph.add(q2);
-
-    var q3 = LiteGraph.createNode("diagnosis/question");
-    q3.pos = [580, 400];
-    q3.properties.question = "屏幕是否有任何显示？";
-    graph.add(q3);
-
-    var d1 = LiteGraph.createNode("diagnosis/leaf");       // 六边形
-    d1.pos = [840, 40];
-    d1.properties.name = "电源线松动 / 损坏";
-    d1.properties.confidence = 0.9;
-    d1.properties.advice = "重新插紧或更换电源线";
+    var d1 = LiteGraph.createNode("diagnosis/diag");   // 诊断节点
+    d1.pos = [320, 360];
+    d1.properties.data = "检查电源指示灯是否亮起";
     graph.add(d1);
 
-    var d2 = LiteGraph.createNode("diagnosis/leaf");
-    d2.pos = [840, 150];
-    d2.properties.name = "电源适配器故障";
-    d2.properties.confidence = 0.8;
-    d2.properties.advice = "更换电源适配器";
+    var a1 = LiteGraph.createNode("diagnosis/action"); // 诊断动作
+    a1.pos = [320, 560];
+    a1.properties.action = "重新插拔电源线";
+    a1.properties.followup = "观察指示灯变化";
+    graph.add(a1);
+
+    var d2 = LiteGraph.createNode("diagnosis/diag");
+    d2.pos = [600, 360];
+    d2.properties.data = "指示灯仍不亮，测量适配器输出电压";
     graph.add(d2);
 
-    var d3 = LiteGraph.createNode("diagnosis/leaf");
-    d3.pos = [840, 330];
-    d3.properties.name = "主板 / 显示模块故障";
-    d3.properties.confidence = 0.7;
-    d3.properties.advice = "送修检测主板与显示模块";
-    graph.add(d3);
+    var c1 = LiteGraph.createNode("diagnosis/conclusion"); // 结论节点
+    c1.pos = [880, 360];
+    c1.properties.conclusion = "电源适配器故障";
+    graph.add(c1);
 
-    var d4 = LiteGraph.createNode("diagnosis/leaf");
-    d4.pos = [840, 450];
-    d4.properties.name = "系统软件卡死";
-    d4.properties.confidence = 0.75;
-    d4.properties.advice = "长按电源键 10 秒强制重启";
-    graph.add(d4);
+    var m1 = LiteGraph.createNode("diagnosis/measure");    // 措施节点
+    m1.pos = [1140, 360];
+    m1.properties.measure = "更换电源适配器";
+    graph.add(m1);
+
+    var r1 = LiteGraph.createNode("diagnosis/resolved");   // 问题解决
+    r1.pos = [1380, 360];
+    r1.properties.judgement = "问题是否解决？";
+    graph.add(r1);
+
+    var cont = LiteGraph.createNode("diagnosis/continue"); // 继续活动
+    cont.pos = [1380, 200];
+    graph.add(cont);
+
+    var esc = LiteGraph.createNode("diagnosis/escalate");  // 上升
+    esc.pos = [1380, 540];
+    esc.properties.reason = "适配器更换后仍无法开机，需上升研发";
+    graph.add(esc);
 
     // 连线：右锚点(1) → 左锚点(3)
-    start.connect(1, q1, 3);
-    q1.connect(1, q2, 3);
-    q1.connect(1, q3, 3);
-    q2.connect(1, d1, 3);
-    q2.connect(1, d2, 3);
-    q3.connect(1, d3, 3);
-    q3.connect(1, d4, 3);
+    start.connect(1, d1, 3);
+    d1.connect(1, a1, 3);
+    a1.connect(1, d2, 3);
+    d2.connect(1, c1, 3);
+    c1.connect(1, m1, 3);
+    m1.connect(1, r1, 3);
+    r1.connect(1, cont, 3);   // 解决 → 继续活动
+    r1.connect(1, esc, 3);    // 未解决 → 上升
 
     canvas.setDirty(true, true);
-    showStatus("已加载示例：「打印机无法开机」决策树。\n从节点边缘的锚点拖出连线（锚点不区分输入输出，拖出端即输出）；受约束限制。");
+    showStatus("已加载示例：「设备无法开机」完整排查闭环。\n诊断节点 → 诊断动作 → 结论 → 措施 → 问题解决 →（继续活动 / 上升）。\n从节点边缘锚点拖出连线；受类型约束严格限制。");
   }
 
-  /* ---------- 压力测试：生成 ~100 节点的二叉决策树 ---------- */
+  /* ---------- 压力测试：生成 ~100 节点的诊断流程图 ---------- */
   function loadStressTest() {
     var t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     graph.clear();
 
-    // 结构：起点(1) → 深度 0~5 问诊层（每层节点数 2^layer）→ 第 6 层 35 个 leaf
-    // 总数 = 1 + 2 + 4 + 8 + 16 + 32 + 35 = 98 ≈ 100
-    var COL_W = 220;          // 列间距
-    var ROW_H = 130;          // 行间距（菱形高 110）
+    // 结构：起点(1) → 深度 0~5 诊断层（每层节点数 2^layer）→ 末端闭环
+    // 中间层用「诊断节点」，末端接到「结论/措施/问题解决/继续活动」
+    var COL_W = 220;
+    var ROW_H = 120;
     var ORIGIN_X = 40;
     var ORIGIN_Y = 40;
-    var byLayer = [];         // byLayer[layer] = [nodes...]
+    var byLayer = [];
     var start = LiteGraph.createNode("diagnosis/start");
-    start.pos = [ORIGIN_X, ORIGIN_Y + 8 * ROW_H];
+    start.pos = [ORIGIN_X, ORIGIN_Y + 6 * ROW_H];
     start.properties.scenario = "压力测试：100 节点诊断流程图";
     graph.add(start);
     byLayer.push([start]);
 
-    var leafBudget = 35; // 第 6 层叶子数，控制总数≈100
-    var layers = [1, 2, 4, 8, 16, 32]; // 深度 1~5 的问诊节点数（二叉）
+    var layers = [1, 2, 4, 8, 16, 32]; // 深度 1~5 的诊断节点数（二叉）
     layers.forEach(function (count, i) {
       var layer = i + 1;
       var nodes = [];
       var colX = ORIGIN_X + layer * COL_W;
       var span = (count - 1) * ROW_H;
       for (var k = 0; k < count; k++) {
-        var q = LiteGraph.createNode("diagnosis/question");
+        var q = LiteGraph.createNode("diagnosis/diag");
         q.pos = [colX, ORIGIN_Y + k * ROW_H + 160 - span / 2];
-        q.properties.question = "层级 " + layer + " 问题 #" + (k + 1);
-        q.properties.answers = ["否", "是"];
-        rebuildQuestion(q);
-        q.title = "❓ " + q.properties.question;
+        q.properties.data = "层级 " + layer + " 排查项 #" + (k + 1);
         graph.add(q);
         nodes.push(q);
       }
       byLayer.push(nodes);
     });
-    // 第 6 层：35 个叶子（算上第 5 层 32 个问诊 = 32+35=67 不够 100 ——调整预算）
-    // 实际总数 = 1+2+4+8+16+32+leaf = 63+leaf；要 ≈100 则 leaf=37
-    leafBudget = 37;
-    var leafNodes = [];
-    var leafX = ORIGIN_X + 6 * COL_W;
-    for (var l = 0; l < leafBudget; l++) {
-      var d = LiteGraph.createNode("diagnosis/leaf");
-      d.pos = [leafX, ORIGIN_Y + l * 60 + 800 - leafBudget * 30];
-      d.properties.name = "结论 #" + (l + 1);
-      d.properties.confidence = 0.5 + (l % 5) * 0.1;
-      d.properties.advice = "处置建议 #" + (l + 1);
-      graph.add(d);
-      leafNodes.push(d);
-    }
-    byLayer.push(leafNodes);
 
-    // 连线：第 L 层每节点分 2 支到第 L+1 层两个节点；第 5 层（32 个）每个分 2 支给第 6 层 35 个叶子，按索引顺序分配（>32 个叶子复用部分父节点）
+    // 末端闭环：32 个诊断节点 → 各接一个 结论→措施→问题解决→继续活动 短链
+    var leafX = ORIGIN_X + 6 * COL_W;
+    var tailNodes = [];
+    var tailCount = 32;
+    for (var l = 0; l < tailCount; l++) {
+      var c = LiteGraph.createNode("diagnosis/conclusion");
+      c.pos = [leafX, ORIGIN_Y + l * ROW_H + 120 - tailCount * 30];
+      c.properties.conclusion = "结论 #" + (l + 1);
+      graph.add(c);
+
+      var m = LiteGraph.createNode("diagnosis/measure");
+      m.pos = [leafX + COL_W, ORIGIN_Y + l * ROW_H + 120 - tailCount * 30];
+      m.properties.measure = "措施 #" + (l + 1);
+      graph.add(m);
+
+      var r = LiteGraph.createNode("diagnosis/resolved");
+      r.pos = [leafX + COL_W * 2, ORIGIN_Y + l * ROW_H + 120 - tailCount * 30];
+      graph.add(r);
+
+      var cont = LiteGraph.createNode("diagnosis/continue");
+      cont.pos = [leafX + COL_W * 3, ORIGIN_Y + l * ROW_H + 120 - tailCount * 30];
+      graph.add(cont);
+
+      c.connect(1, m, 3);
+      m.connect(1, r, 3);
+      r.connect(1, cont, 3);
+      tailNodes.push(c);
+    }
+    byLayer.push(tailNodes);
+
+    // 连线：中间层二叉展开（右锚 1 → 左锚 3）
     for (var L = 0; L < byLayer.length - 1; L++) {
       var parents = byLayer[L];
       var children = byLayer[L + 1];
       if (L === byLayer.length - 2) {
-        // 第 5 层（问诊） → 第 6 层（叶子）：按父节点索引均匀分发到 35 个叶子
+        // 第 5 层（32 诊断节点）→ 第 6 层（32 结论）：一一对应
         for (var p = 0; p < parents.length; p++) {
-          // 每个父节点选 1~2 个不同叶子作"否/是"分支，确保每个叶子至少被一个父节点指向
-          var childIdx1 = (p * 2) % children.length;
-          var childIdx2 = (p * 2 + 1 + L) % children.length;
-          parents[p].connect(0, children[childIdx1], 0); // 否
-          parents[p].connect(1, children[childIdx2], 0); // 是
+          parents[p].connect(1, children[p], 3);
         }
       } else {
-        // 中间层 1:1 二叉展开
         for (var i2 = 0; i2 < parents.length; i2++) {
-          parents[i2].connect(1, children[i2 * 2], 3);     // 右锚 → 左锚
+          parents[i2].connect(1, children[i2 * 2], 3);
           parents[i2].connect(1, children[i2 * 2 + 1], 3);
         }
       }
@@ -536,7 +540,7 @@
 
     var t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     canvas.setDirty(true, true);
-    canvas.ds.scale = 0.5; // 缩小点便于查看全景
+    canvas.ds.scale = 0.5;
     canvas.ds.offset = [20, 20];
     canvas.setDirty(true, true);
 
@@ -545,13 +549,56 @@
     showStatus(
       "压力测试已加载：" + total + " 节点 / " + links + " 连线\n" +
       "生成耗时：" + (t1 - t0).toFixed(1) + " ms\n" +
-      "提示：单击任意节点查看 100 节点规模的流向高亮与父子发光；可拖动/缩放/选择。"
+      "提示：单击任意节点查看流向高亮与父子发光；可拖动/缩放/选择。"
     );
   }
 
   /* ---------- 验证流程结构 ---------- */
   function nodeLabel(nd) {
-    return nd.properties.question || nd.properties.name || nd.properties.scenario || nd.title || nd.type;
+    var p = nd.properties || {};
+    return p.data || p.action || p.conclusion || p.measure ||
+           p.judgement || p.reason || p.scenario || nd.title || nd.type;
+  }
+  // 判断某节点是否为「终止节点」（问题解决 / 上升 / 继续活动）
+  function isTerminal(type) {
+    return type === "diagnosis/resolved" || type === "diagnosis/escalate" ||
+           type === "diagnosis/continue";
+  }
+  // 全局约束：所有「诊断节点 / 诊断动作」链路末端必须接到「问题解决 / 上升」。
+  // 返回问题描述数组（供 validateGraph 与 exportJSON「保存前校验」复用）。
+  function findOpenChainIssues() {
+    var issues = [];
+    var nodes = graph._nodes;
+    nodes.forEach(function (nd) {
+      if (nd.type !== "diagnosis/diag" && nd.type !== "diagnosis/action") return;
+      var outs = (nd.outputs || []).filter(function (o) { return (o.links || []).length > 0; });
+      if (!outs.length) return; // 孤立节点由"未接入流程"另行提示
+      var leafSet = {};
+      var stk = [nd];
+      var seen = {};
+      while (stk.length) {
+        var cur = stk.pop();
+        if (!cur || seen[cur.id]) continue;
+        seen[cur.id] = true;
+        var os = (cur.outputs || []).filter(function (o) { return (o.links || []).length > 0; });
+        if (!os.length) { leafSet[cur.id] = cur; continue; }
+        os.forEach(function (o) {
+          (o.links || []).forEach(function (id) {
+            var l = graph.links[id];
+            if (l) stk.push(graph.getNodeById(l.target_id));
+          });
+        });
+      }
+      var badLeaves = [];
+      for (var k in leafSet) {
+        if (!isTerminal(leafSet[k].type)) badLeaves.push(leafSet[k]);
+      }
+      if (badLeaves.length) {
+        issues.push("「" + nodeLabel(nd) + "」链路末端未接到【问题解决】或【上升】（终止于：" +
+          badLeaves.map(nodeLabel).join("、") + "）");
+      }
+    });
+    return issues;
   }
   function validateGraph() {
     var issues = [];
@@ -588,37 +635,51 @@
       }
     });
 
-    if (!issues.length) issues.push("✓ 诊断流程结构有效：单一入口、无环路、所有节点均可达。");
+    // 全局约束：链路末端必须闭合
+    findOpenChainIssues().forEach(function (s) { issues.push("✗ " + s); });
+
+    if (!issues.length) issues.push("✓ 诊断流程结构有效：单一入口、无环路、所有节点可达、链路末端均闭合。");
     showStatus("【结构验证】\n" + issues.join("\n"));
   }
 
-  /* ---------- 推理演示（随机分支遍历到叶子） ---------- */
+  /* ---------- 推理演示（随机分支遍历到终止节点） ---------- */
   function runInference() {
     var starts = graph.findNodesByType("diagnosis/start");
     if (!starts.length) { showStatus("请先加载或构建诊断流程。"); return; }
     var node = starts[0];
     var path = ["> 起点：" + (node.properties.scenario || "诊断")];
     var guard = 0;
-    while (node && node.type !== "diagnosis/leaf" && guard++ < 50) {
+    while (node && !isTerminal(node.type) && guard++ < 100) {
       var outs = (node.outputs || []).filter(function (o) { return (o.links || []).length > 0; });
       if (!outs.length) { path.push("…（无可用分支，推理中断）"); break; }
       var choice = outs[Math.floor(Math.random() * outs.length)];
       var link = graph.links[choice.links[0]];
       var next = graph.getNodeById(link.target_id);
-      path.push("→ " + (node.properties.question || "…") + "  ⇒  " + nodeLabel(next));
+      path.push("→ " + (nodeLabel(node) || "…") + "  ⇒  " + nodeLabel(next));
       node = next;
     }
     var result = "";
-    if (node && node.type === "diagnosis/leaf") {
-      result = "\n────────────\n结论：" + node.properties.name +
-        "\n置信度：" + node.properties.confidence +
-        "\n处置：" + node.properties.advice;
+    if (node && isTerminal(node.type)) {
+      if (node.type === "diagnosis/continue") {
+        result = "\n────────────\n问题已解决 → 继续活动";
+      } else if (node.type === "diagnosis/escalate") {
+        result = "\n────────────\n上升：" + (node.properties.reason || "缺少排查方向/手段");
+      } else {
+        result = "\n────────────\n问题解决判定：" + (node.properties.judgement || "—");
+      }
     }
     showStatus("【推理演示（随机分支）】\n" + path.join("\n") + result);
   }
 
   /* ---------- 导入 / 导出 ---------- */
   function exportJSON() {
+    // 保存前全局校验：链路末端必须接到【问题解决/上升】，违规则拦截并提示
+    var openIssues = findOpenChainIssues();
+    if (openIssues.length) {
+      showToast("保存前校验未通过：\n" + openIssues.join("\n"), "error");
+      showStatus("【保存前校验】存在未闭合链路，已拦截导出：\n" + openIssues.join("\n"));
+      return;
+    }
     var data = JSON.stringify(graph.serialize(), null, 2);
     var blob = new Blob([data], { type: "application/json" });
     var a = document.createElement("a");

@@ -2,13 +2,20 @@
  * diagnosis-nodes.js
  * 基于「诊断专家系统 / 决策树」理论的 LiteGraph 自定义节点
  *
- * 形态设计（无标题栏、空白主体，靠形状+配色区分类型）：
- *   diagnosis/start    诊断起点  —— 胶囊形（青绿）
- *   diagnosis/question 问诊节点  —— 菱形（蓝）
- *   diagnosis/leaf     诊断结论  —— 六边形（橙）
+ * 节点体系（8 种，按故障排查闭环设计）：
+ *   diagnosis/start      诊断起点   —— 胶囊     （青绿）  流程唯一入口
+ *   diagnosis/diag       诊断节点   —— 圆角矩形 （青绿）  呈现排查数据，不改机台状态
+ *   diagnosis/action     诊断动作   —— 圆角矩形 （蓝）    执行机台动作，推动诊断继续
+ *   diagnosis/conclusion 结论节点   —— 菱形     （橙）    排查得出的结论（可初步）
+ *   diagnosis/measure    措施节点   —— 矩形     （紫）    结论之后执行什么措施
+ *   diagnosis/resolved   问题解决   —— 胶囊     （绿）    诊断+措施后问题是否解决
+ *   diagnosis/escalate   上升       —— 梯形     （红）    缺方向/缺手段，或措施无效后上升
+ *   diagnosis/continue   继续活动   —— 圆角矩形 （灰蓝）  问题解决后走向继续活动（固定文本）
  *
- * 连接模型：每个节点上/下/左/右各一个「通用锚点」，
- * 不区分输入/输出——由用户行为决定：
+ * 形态设计（无标题栏、空白主体，靠形状+配色区分类型）：
+ *   内部留白，仅一个可编辑文本字段 + 上/右/下/左四个「通用锚点」。
+ *
+ * 连接模型：每个锚点不区分输入/输出——由用户行为决定：
  *   从 A 锚点按下拖出、连到 B 锚点释放 ⇒ A 为输出、B 为输入。
  * （litegraph 在 mousedown 时先搜输出槽再搜输入槽，锚点处两者重叠，
  *   因此按下永远命中输出槽 = 拖出端；释放端由 isOverNodeInput 命中输入槽。）
@@ -25,18 +32,56 @@
   }
 
   /* -----------------------------------------------------------
-   * 形状与锚点几何（app.js 的辉光绘制复用 DiagFlowNodes.shapePath）
+   * 节点元信息集中表：type → { title, shape, fill, stroke, anchor, size, textField }
+   * shape 取值：capsule / roundrect / diamond / rect / trapezoid
    * --------------------------------------------------------- */
-  var SHAPE_STYLES = {
-    "diagnosis/start":    { fill: "#00897b", stroke: "#004d40", anchor: "#e0f2f1" },
-    "diagnosis/question": { fill: "#1e88e5", stroke: "#0d47a1", anchor: "#e3f2fd" },
-    "diagnosis/leaf":     { fill: "#fb8c00", stroke: "#e65100", anchor: "#fff3e0" }
+  var NODE_DEFS = {
+    "diagnosis/start": {
+      title: "诊断起点", shape: "capsule",
+      fill: "#00897b", stroke: "#004d40", anchor: "#e0f2f1",
+      size: [180, 80], textField: "scenario", defaultText: "诊断场景描述"
+    },
+    "diagnosis/diag": {
+      title: "诊断节点", shape: "roundrect",
+      fill: "#26a69a", stroke: "#00695c", anchor: "#e0f2f1",
+      size: [190, 100], textField: "data", defaultText: "需要排查的现象"
+    },
+    "diagnosis/action": {
+      title: "诊断动作", shape: "roundrect",
+      fill: "#1e88e5", stroke: "#0d47a1", anchor: "#e3f2fd",
+      size: [190, 100], textField: "action", defaultText: "执行的动作", extraField: "followup", extraDefault: "后续动作"
+    },
+    "diagnosis/conclusion": {
+      title: "结论节点", shape: "diamond",
+      fill: "#fb8c00", stroke: "#e65100", anchor: "#fff3e0",
+      size: [180, 130], textField: "conclusion", defaultText: "排查结论"
+    },
+    "diagnosis/measure": {
+      title: "措施节点", shape: "rect",
+      fill: "#8e24aa", stroke: "#4a148c", anchor: "#f3e5f5",
+      size: [180, 90], textField: "measure", defaultText: "执行的措施"
+    },
+    "diagnosis/resolved": {
+      title: "问题解决", shape: "capsule",
+      fill: "#43a047", stroke: "#1b5e20", anchor: "#e8f5e9",
+      size: [180, 80], textField: "judgement", defaultText: "问题是否解决"
+    },
+    "diagnosis/escalate": {
+      title: "上升", shape: "trapezoid",
+      fill: "#e53935", stroke: "#b71c1c", anchor: "#ffebee",
+      size: [180, 90], textField: "reason", defaultText: "上升原因"
+    },
+    "diagnosis/continue": {
+      title: "继续活动", shape: "roundrect",
+      fill: "#546e7a", stroke: "#263238", anchor: "#eceff1",
+      size: [180, 80], textField: null, defaultText: null, fixedText: "继续活动"
+    }
   };
 
   // 文本参数（参考亿图图示/draw.io/Visio 流程图节点的内部留白与字号惯例）
-  var TEXT_PAD_X = 12;        // 文本左右内边距（菱形/六边形的尖角区不能占）
+  var TEXT_PAD_X = 12;        // 文本左右内边距（菱形/梯形的尖角区不能占）
   var TEXT_LINE = 16;         // 行高（px）
-  var TEXT_MAX_LINES = 4;     // 问诊节点最多显示 4 行，超出截断
+  var TEXT_MAX_LINES = 4;     // 最多显示 4 行，超出截断
   var FONT_MAIN = "14px 'Microsoft YaHei', 'PingFang SC', sans-serif";
   var FONT_SUB  = "11px 'Microsoft YaHei', 'PingFang SC', sans-serif";
 
@@ -60,7 +105,6 @@
   }
 
   // 绘制节点内文本（垂直水平居中，超出截断加省略号）
-  // 返回总占用行高（用于外部布局决策）
   function drawNodeLabel(ctx, text, w, h, font) {
     if (!text) return 0;
     ctx.font = font || FONT_MAIN;
@@ -71,7 +115,6 @@
     var lines = wrapText(ctx, text, maxWidth);
     if (lines.length > TEXT_MAX_LINES) {
       lines = lines.slice(0, TEXT_MAX_LINES);
-      // 最后一行的最后一个字符替换为省略号（若它本身不宽）
       var last = lines[lines.length - 1];
       while (last.length > 1 && ctx.measureText(last + "…").width > maxWidth) {
         last = last.slice(0, -1);
@@ -79,7 +122,7 @@
       lines[lines.length - 1] = last + "…";
     }
     var total = lines.length * TEXT_LINE;
-    var y0 = (h - total) / 2 + 0.5; // 视觉居中微调
+    var y0 = (h - total) / 2 + 0.5;
     for (var i = 0; i < lines.length; i++) {
       ctx.fillText(lines[i], w * 0.5, y0 + i * TEXT_LINE);
     }
@@ -99,9 +142,10 @@
 
   // 画出节点几何形状路径（x,y 为左上角，绝对或局部坐标均可）
   function shapePath(ctx, type, x, y, w, h) {
+    var def = NODE_DEFS[type] || {};
+    var shape = def.shape || "roundrect";
     ctx.beginPath();
-    if (type === "diagnosis/start") {
-      // 胶囊（stadium）：两端半圆
+    if (shape === "capsule") {
       var r = h / 2;
       if (typeof ctx.roundRect === "function") {
         ctx.roundRect(x, y, w, h, r);
@@ -113,28 +157,73 @@
       ctx.lineTo(x + r, y + h);
       ctx.arc(x + r, y + r, r, Math.PI / 2, Math.PI * 1.5);
       ctx.closePath();
-    } else if (type === "diagnosis/question") {
-      // 菱形
+    } else if (shape === "diamond") {
       ctx.moveTo(x + w * 0.5, y);
       ctx.lineTo(x + w, y + h * 0.5);
       ctx.lineTo(x + w * 0.5, y + h);
       ctx.lineTo(x, y + h * 0.5);
       ctx.closePath();
+    } else if (shape === "trapezoid") {
+      // 上窄下宽的梯形（上升：由窄走向宽的语义）
+      var inset = w * 0.2;
+      ctx.moveTo(x + inset, y);
+      ctx.lineTo(x + w - inset, y);
+      ctx.lineTo(x + w, y + h);
+      ctx.lineTo(x, y + h);
+      ctx.closePath();
+    } else if (shape === "rect") {
+      ctx.rect(x, y, w, h);
     } else {
-      // 六边形（左右为尖角）
-      ctx.moveTo(x, y + h * 0.5);
-      ctx.lineTo(x + w * 0.22, y);
-      ctx.lineTo(x + w * 0.78, y);
-      ctx.lineTo(x + w, y + h * 0.5);
-      ctx.lineTo(x + w * 0.78, y + h);
-      ctx.lineTo(x + w * 0.22, y + h);
+      // roundrect（默认）
+      var rr = Math.min(10, w * 0.08, h * 0.2);
+      if (typeof ctx.roundRect === "function") {
+        ctx.roundRect(x, y, w, h, rr);
+        return;
+      }
+      ctx.moveTo(x + rr, y);
+      ctx.lineTo(x + w - rr, y);
+      ctx.arcTo(x + w, y, x + w, y + rr, rr);
+      ctx.lineTo(x + w, y + h - rr);
+      ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+      ctx.lineTo(x + rr, y + h);
+      ctx.arcTo(x, y + h, x, y + h - rr, rr);
+      ctx.lineTo(x, y + rr);
+      ctx.arcTo(x, y, x + rr, y, rr);
       ctx.closePath();
     }
   }
 
   /* -----------------------------------------------------------
    * 连接约束
+   *
+   * 每个节点「可后接」的目标类型集合（source 输出 → 允许的 target）：
+   *   start      → diag / action
+   *   diag       → diag / action / conclusion / resolved / escalate   （不能接 measure）
+   *   action     → diag / action / conclusion / resolved / escalate   （不能接 measure）
+   *   conclusion → measure                                             （只能接措施）
+   *   measure    → resolved                                            （只能接问题解决）
+   *   resolved   → continue / escalate                                 （解决→继续，未解决→上升）
+   *   escalate   → （终止，无输出）
+   *   continue   → （终止，无输出）
+   *
+   * 反向推导的「前接」限制（target 允许的来源）：
+   *   conclusion ← diag / action      （结论定义写"只能接诊断节点"，但诊断动作也
+   *                                     明确允许后接结论，此处取并集以自洽）
+   *   measure    ← conclusion
+   *   continue   ← resolved
+   *   escalate   ← diag / action / resolved
    * --------------------------------------------------------- */
+  var ALLOWED_NEXT = {
+    "diagnosis/start":      ["diagnosis/diag", "diagnosis/action"],
+    "diagnosis/diag":       ["diagnosis/diag", "diagnosis/action", "diagnosis/conclusion", "diagnosis/resolved", "diagnosis/escalate"],
+    "diagnosis/action":     ["diagnosis/diag", "diagnosis/action", "diagnosis/conclusion", "diagnosis/resolved", "diagnosis/escalate"],
+    "diagnosis/conclusion": ["diagnosis/measure"],
+    "diagnosis/measure":    ["diagnosis/resolved"],
+    "diagnosis/resolved":   ["diagnosis/continue", "diagnosis/escalate"],
+    "diagnosis/escalate":   [],
+    "diagnosis/continue":   []
+  };
+
   function getOutgoingNodes(node) {
     var res = [];
     (node.outputs || []).forEach(function (out) {
@@ -174,11 +263,6 @@
       notify("诊断起点是流程入口，只能发出连接，不能被连入");
       return false;
     }
-    // 结论只能接收
-    if (source.type === "diagnosis/leaf") {
-      notify("诊断结论是流程终点，只能被连入，不能发出连接");
-      return false;
-    }
 
     var input = target.inputs && target.inputs[targetSlot];
     if (!input) return false;
@@ -192,9 +276,18 @@
       }
     }
 
-    // 禁止环路（保持决策树为有向无环图）
+    // 禁止环路（决策树必须为有向无环图）
     if (wouldCreateCycle(source, target)) {
       notify("不允许形成环路（决策树必须为有向无环图）");
+      return false;
+    }
+
+    // 类型约束：source 可后接的目标集合是否包含 target 类型
+    var allowed = ALLOWED_NEXT[source.type];
+    if (allowed && allowed.indexOf(target.type) === -1) {
+      var st = NODE_DEFS[source.type] || { title: source.type };
+      var tt = NODE_DEFS[target.type] || { title: target.type };
+      notify("「" + st.title + "」不能直接连接「" + tt.title + "」");
       return false;
     }
     return true;
@@ -204,7 +297,6 @@
    * 诊断节点原型公共方法
    * --------------------------------------------------------- */
   function makeDiagnosisProto(proto) {
-    // 锚点几何：覆盖默认的垂直槽位布局
     proto.getConnectionPos = function (is_input, slot_number, out) {
       out = out || new Float32Array(2);
       if (this.flags && this.flags.collapsed) {
@@ -218,43 +310,40 @@
       return out;
     };
 
-    // 自绘形状 + 文本 + 锚点（onDrawBackground 时 ctx 已平移到节点局部坐标）
     proto.onDrawBackground = function (ctx, lcanvas) {
-      var style = SHAPE_STYLES[this.type] || { fill: "#90a4ae", stroke: "#455a64", anchor: "#eceff1" };
+      var def = NODE_DEFS[this.type] || { fill: "#90a4ae", stroke: "#455a64", anchor: "#eceff1" };
       var w = this.size[0], h = this.size[1];
 
       shapePath(ctx, this.type, 0, 0, w, h);
-      ctx.fillStyle = style.fill;
+      ctx.fillStyle = def.fill;
       ctx.fill();
-      ctx.strokeStyle = style.stroke;
+      ctx.strokeStyle = def.stroke;
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // 形状内文本（参考亿图图示/draw.io/Visio 流程图节点做法）
-      // 三类节点的「主文本字段」由各节点自定义：getLabel(ctx, w, h) 返回 void
+      // 形状内文本
       var labelFn = this.getLabel;
       if (typeof labelFn === "function") labelFn.call(this, ctx, w, h);
 
-      // 四个锚点：默认空心小圆；鼠标靠近时放大提示可连接
+      // 四个锚点
       for (var i = 0; i < 4; i++) {
         var p = anchorLocal(this, i);
         var r = 4.5;
         if (lcanvas && lcanvas.graph_mouse) {
           var ax = this.pos[0] + p[0], ay = this.pos[1] + p[1];
           var dx = lcanvas.graph_mouse[0] - ax, dy = lcanvas.graph_mouse[1] - ay;
-          if (dx * dx + dy * dy < 196) r = 6.5; // 14px 内视为悬停
+          if (dx * dx + dy * dy < 196) r = 6.5;
         }
         ctx.beginPath();
         ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
-        ctx.fillStyle = style.anchor;
+        ctx.fillStyle = def.anchor;
         ctx.fill();
-        ctx.strokeStyle = style.stroke;
+        ctx.strokeStyle = def.stroke;
         ctx.lineWidth = 1.6;
         ctx.stroke();
       }
     };
 
-    // 连接约束：从本节点锚点拖出、连到目标节点
     proto.onConnectOutput = function (_slot, _type, _inSlot, target_node, target_slot) {
       return validateLink(this, target_node, target_slot);
     };
@@ -263,151 +352,108 @@
     proto.connectByType = function () { return null; };
     proto.connectByTypeOutput = function () { return null; };
 
-    // 节点命中区域修复：litegraph 的 isPointInside 左/右/上有 ±4px 容差，
-    // 但底边是严格不等号（litegraph.js:3942），释放点恰好压在底边锚点时
-    // 节点命中失败 → 连不上。统一给命中区域外扩 4px（覆盖锚点外半圈）。
     proto.isPointInside = function (x, y, margin, skip_title) {
       return LiteGraph.LGraphNode.prototype.isPointInside.call(this, x, y, margin || 4, skip_title);
     };
   }
 
-  /* ===========================================================
-   * 1) 诊断起点 —— 胶囊
-   * ========================================================= */
-  function DiagnosisStartNode() {
-    LiteGraph.LGraphNode.call(this);
-    var self = this;
-    ["上", "右", "下", "左"].forEach(function (name) {
-      self.addOutput(name, "");
-      self.addInput(name, "");
-    });
-    this.properties = { scenario: "诊断场景描述" };
-    this.size = [180, 80];
-    this.resizable = false;
-  }
-  DiagnosisStartNode.title = "诊断起点";
-  DiagnosisStartNode.desc = "决策树唯一入口（胶囊形）";
-  DiagnosisStartNode.filter = "diagnosis";
-  DiagnosisStartNode.title_mode = LiteGraph.NO_TITLE;      // 无标题栏
-  DiagnosisStartNode.color = "rgba(0,0,0,0)";              // 隐藏库默认边框色
-  DiagnosisStartNode.bgcolor = "rgba(0,0,0,0)";            // 隐藏库默认底色，由自绘接管
-  DiagnosisStartNode.prototype.getLabel = function (ctx, w, h) {
-    drawNodeLabel(ctx, this.properties.scenario, w, h);
-  };
-  DiagnosisStartNode.prototype.onDblClick = function () {
-    var next = window.prompt("编辑诊断场景（起点描述）：", this.properties.scenario || "");
-    if (next !== null) {
-      this.properties.scenario = next;
-      this.setDirtyCanvas(true, false);
-    }
-  };
-  makeDiagnosisProto(DiagnosisStartNode.prototype);
-  LiteGraph.registerNodeType("diagnosis/start", DiagnosisStartNode);
-
-  /* ===========================================================
-   * 2) 问诊节点 —— 菱形
-   * ========================================================= */
-  function DiagnosisQuestionNode() {
-    LiteGraph.LGraphNode.call(this);
-    var self = this;
-    ["上", "右", "下", "左"].forEach(function (name) {
-      self.addOutput(name, "");
-      self.addInput(name, "");
-    });
-    this.properties = { question: "请输入判断问题" };
-    this.size = [180, 130];
-    this.resizable = false;
-  }
-  DiagnosisQuestionNode.title = "问诊节点";
-  DiagnosisQuestionNode.desc = "提出判断问题（菱形）";
-  DiagnosisQuestionNode.filter = "diagnosis";
-  DiagnosisQuestionNode.title_mode = LiteGraph.NO_TITLE;
-  DiagnosisQuestionNode.color = "rgba(0,0,0,0)";
-  DiagnosisQuestionNode.bgcolor = "rgba(0,0,0,0)";
-  DiagnosisQuestionNode.prototype.getLabel = function (ctx, w, h) {
-    // 菱形尖角不能占文字区，额外收窄可绘宽度
-    var innerW = Math.max(60, w * 0.72);
-    drawNodeLabel(ctx, this.properties.question, innerW, h);
-  };
-  DiagnosisQuestionNode.prototype.onDblClick = function () {
-    var next = window.prompt("编辑判断问题：", this.properties.question || "");
-    if (next !== null) {
-      this.properties.question = next;
-      this.setDirtyCanvas(true, false);
-    }
-  };
-  makeDiagnosisProto(DiagnosisQuestionNode.prototype);
-  LiteGraph.registerNodeType("diagnosis/question", DiagnosisQuestionNode);
-
-  /* ===========================================================
-   * 3) 诊断结论 —— 六边形
-   * ========================================================= */
-  function DiagnosisLeafNode() {
-    LiteGraph.LGraphNode.call(this);
-    var self = this;
-    ["上", "右", "下", "左"].forEach(function (name) {
-      self.addOutput(name, "");
-      self.addInput(name, "");
-    });
-    this.properties = { name: "诊断结论", confidence: 0.8, advice: "建议的处理方式" };
-    this.size = [180, 100];
-    this.resizable = false;
-  }
-  DiagnosisLeafNode.title = "诊断结论";
-  DiagnosisLeafNode.desc = "决策树叶子节点（六边形）";
-  DiagnosisLeafNode.filter = "diagnosis";
-  DiagnosisLeafNode.title_mode = LiteGraph.NO_TITLE;
-  DiagnosisLeafNode.color = "rgba(0,0,0,0)";
-  DiagnosisLeafNode.bgcolor = "rgba(0,0,0,0)";
-  DiagnosisLeafNode.prototype.getLabel = function (ctx, w, h) {
-    // 主标题 name + 副标题置信度（六边形左右为尖角，给中间留宽）
-    var innerW = Math.max(60, w * 0.78);
-    // 主标题垂直居中略偏上，副标题紧贴下方
-    var totalMain = drawNodeLabel(ctx, this.properties.name, innerW, h * 0.65);
-    var conf = Math.round((this.properties.confidence || 0) * 100);
-    ctx.font = FONT_SUB;
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    var subY = h * 0.5 + totalMain * 0.25 + 2;
-    ctx.fillText("置信度 " + conf + "%", w * 0.5, subY);
-  };
-  DiagnosisLeafNode.prototype.onDblClick = function () {
-    var name = window.prompt("编辑诊断结论（名称）：", this.properties.name || "");
-    if (name === null) return;
-    this.properties.name = name;
-    var confStr = window.prompt("编辑置信度（0~1，例如 0.8）：", String(this.properties.confidence || 0));
-    if (confStr !== null) {
-      var v = parseFloat(confStr);
-      if (!isNaN(v)) this.properties.confidence = Math.max(0, Math.min(1, v));
-    }
-    var advice = window.prompt("编辑处置建议：", this.properties.advice || "");
-    if (advice !== null) this.properties.advice = advice;
-    this.setDirtyCanvas(true, false);
-  };
-  makeDiagnosisProto(DiagnosisLeafNode.prototype);
-  LiteGraph.registerNodeType("diagnosis/leaf", DiagnosisLeafNode);
-
   /* -----------------------------------------------------------
-   * 锁定类型外观：诊断节点不允许通过右键菜单改颜色/形状/尺寸等。
-   * Collapse 已移除（无标题栏节点无折叠形态）；Clone/Remove 由外层自动追加。
+   * 节点工厂：按 NODE_DEFS 元信息批量生成构造函数并注册
    * --------------------------------------------------------- */
-  function lockedMenuOptions() {
-    var C = LiteGraph.LGraphCanvas;
-    return [
-      null,
-      { content: "Pin", callback: C.onMenuNodePin },
-      null
-    ];
-  }
-  DiagnosisStartNode.prototype.getMenuOptions = lockedMenuOptions;
-  DiagnosisQuestionNode.prototype.getMenuOptions = lockedMenuOptions;
-  DiagnosisLeafNode.prototype.getMenuOptions = lockedMenuOptions;
+  function buildNodeFactory(type, def) {
+    function Node() {
+      LiteGraph.LGraphNode.call(this);
+      var self = this;
+      ["上", "右", "下", "左"].forEach(function (name) {
+        self.addOutput(name, "");
+        self.addInput(name, "");
+      });
+      this.properties = {};
+      if (def.textField) this.properties[def.textField] = def.defaultText;
+      if (def.extraField) this.properties[def.extraField] = def.extraDefault;
+      this.size = def.size.slice();
+      this.resizable = false;
+    }
 
-  // 导出给外部使用（app.js：辉光沿形状绘制 / 面板提示）
+    Node.title = def.title;
+    Node.desc = def.title + "（" + def.shape + "）";
+    Node.filter = "diagnosis";
+    Node.title_mode = LiteGraph.NO_TITLE;
+    Node.color = "rgba(0,0,0,0)";
+    Node.bgcolor = "rgba(0,0,0,0)";
+
+    // 文本绘制：固定文本 或 主字段 或 主字段+副字段（诊断动作）
+    Node.prototype.getLabel = function (ctx, w, h) {
+      if (def.fixedText) {
+        drawNodeLabel(ctx, def.fixedText, w, h);
+        return;
+      }
+      var text = this.properties[def.textField];
+      if (def.extraField && this.properties[def.extraField]) {
+        // 主字段居上，副字段（后续动作）居下，用小字号淡色
+        var mainLines = drawNodeLabel(ctx, text, w, h * 0.55);
+        ctx.font = FONT_SUB;
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        var subY = h * 0.5 + mainLines * 0.2 + 2;
+        ctx.fillText(this.properties[def.extraField], w * 0.5, subY);
+        return;
+      }
+      drawNodeLabel(ctx, text, w, h);
+    };
+
+    // 双击编辑文本（参考 draw.io/亿图图示的文本编辑交互）
+    Node.prototype.onDblClick = function () {
+      var def2 = NODE_DEFS[this.type];
+      if (!def2.textField) return; // 固定文本节点（继续活动）不可编辑
+      var label = def2.title;
+      var next = window.prompt("编辑" + label + "文本：", this.properties[def2.textField] || "");
+      if (next !== null) {
+        this.properties[def2.textField] = next;
+        this.setDirtyCanvas(true, false);
+      }
+      // 诊断动作额外编辑「后续动作」
+      if (def2.extraField) {
+        var follow = window.prompt("编辑「后续动作」（会持久传递到后续诊断链路）：", this.properties[def2.extraField] || "");
+        if (follow !== null) {
+          this.properties[def2.extraField] = follow;
+          this.setDirtyCanvas(true, false);
+        }
+      }
+    };
+
+    makeDiagnosisProto(Node.prototype);
+
+    // 锁定类型外观：诊断节点不允许通过右键菜单改颜色/形状/尺寸
+    Node.prototype.getMenuOptions = function () {
+      var C = LiteGraph.LGraphCanvas;
+      return [
+        null,
+        { content: "Pin", callback: C.onMenuNodePin },
+        null
+      ];
+    };
+
+    return Node;
+  }
+
+  // 依次构建并注册 8 种节点
+  var NodeConstructors = {};
+  Object.keys(NODE_DEFS).forEach(function (type) {
+    var def = NODE_DEFS[type];
+    var Ctor = buildNodeFactory(type, def);
+    NodeConstructors[type] = Ctor;
+    LiteGraph.registerNodeType(type, Ctor);
+  });
+
+  // 导出给外部使用（app.js：辉光沿形状绘制 / 类型列表 / 全局校验）
   global.DiagFlowNodes = {
     shapePath: shapePath,
     anchorLocal: anchorLocal,
-    SHAPE_STYLES: SHAPE_STYLES
+    SHAPE_STYLES: NODE_DEFS,
+    NODE_DEFS: NODE_DEFS,
+    ALLOWED_NEXT: ALLOWED_NEXT,
+    types: Object.keys(NODE_DEFS)
   };
 })(window);
