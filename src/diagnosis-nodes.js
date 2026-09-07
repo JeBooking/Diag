@@ -224,6 +224,61 @@
     "diagnosis/continue":   []
   };
 
+  /* -----------------------------------------------------------
+   * 连线规则（LINK_RULES）
+   *
+   * 每条规则在「拖拽连线时」即时校验，校验顺序即为数组顺序。
+   * 规则结构：
+   *   id      : 唯一标识（便于定位/调试）
+   *   message : 拒绝时弹出的提示文案（string，或 function(ctx) 动态生成）
+   *   test    : function(ctx) -> boolean   （true=允许  false=拒绝）
+   *   silent  : 可选。为 true 时拒绝但不弹气泡（如锚点原地松手）
+   *   ctx     = { source, target, targetSlot }
+   *
+   * ★ 以后新增连线约束：在此数组追加一条对象即可，无需改动其它逻辑。
+   * --------------------------------------------------------- */
+  var LINK_RULES = [
+    {
+      id: "no-self",
+      message: "不能连接到节点自身",
+      silent: true,
+      test: function (ctx) { return ctx.source.id !== ctx.target.id; }
+    },
+    {
+      id: "start-is-source-only",
+      message: "诊断起点是流程入口，只能发出连接，不能被连入",
+      test: function (ctx) { return ctx.target.type !== "diagnosis/start"; }
+    },
+    {
+      id: "single-parent",
+      message: "每个节点只能有一个父节点（单一上游）",
+      test: function (ctx) {
+        var inputs = ctx.target.inputs || [];
+        for (var i = 0; i < inputs.length; i++) {
+          if (inputs[i] && inputs[i].link != null && inputs[i].link !== -1) return false;
+        }
+        return true;
+      }
+    },
+    {
+      id: "no-cycle",
+      message: "不允许形成环路（决策树必须为有向无环图）",
+      test: function (ctx) { return !wouldCreateCycle(ctx.source, ctx.target); }
+    },
+    {
+      id: "type-compat",
+      message: function (ctx) {
+        var st = NODE_DEFS[ctx.source.type] || { title: ctx.source.type };
+        var tt = NODE_DEFS[ctx.target.type] || { title: ctx.target.type };
+        return "「" + st.title + "」不能直接连接「" + tt.title + "」";
+      },
+      test: function (ctx) {
+        var allowed = ALLOWED_NEXT[ctx.source.type];
+        return !allowed || allowed.indexOf(ctx.target.type) !== -1;
+      }
+    }
+  ];
+
   function getOutgoingNodes(node) {
     var res = [];
     (node.outputs || []).forEach(function (out) {
@@ -254,41 +309,21 @@
   }
 
   // source: 拖出端（输出）  target: 释放端（输入）
+  // 逐条执行 LINK_RULES，命中第一条拒绝规则即弹出提示（silent 规则除外）并返回 false。
   function validateLink(source, target, targetSlot) {
     if (!source || !target) return false;
-    if (source.id === target.id) return false; // 点锚点原地松手：静默取消，不弹提示
+    if (source.id === target.id) return false; // 点锚点原地松手：静默取消
 
-    // 起点只能发出
-    if (target.type === "diagnosis/start") {
-      notify("诊断起点是流程入口，只能发出连接，不能被连入");
-      return false;
-    }
-
-    var input = target.inputs && target.inputs[targetSlot];
-    if (!input) return false;
-
-    // 单一父节点：目标任何输入锚点已有连线则拒绝
-    var inputs = target.inputs || [];
-    for (var i = 0; i < inputs.length; i++) {
-      if (inputs[i] && inputs[i].link != null && inputs[i].link !== -1) {
-        notify("每个节点只能有一个父节点（单一上游）");
+    var ctx = { source: source, target: target, targetSlot: targetSlot };
+    for (var i = 0; i < LINK_RULES.length; i++) {
+      var rule = LINK_RULES[i];
+      if (!rule.test(ctx)) {
+        if (!rule.silent) {
+          var msg = typeof rule.message === "function" ? rule.message(ctx) : rule.message;
+          notify(msg);
+        }
         return false;
       }
-    }
-
-    // 禁止环路（决策树必须为有向无环图）
-    if (wouldCreateCycle(source, target)) {
-      notify("不允许形成环路（决策树必须为有向无环图）");
-      return false;
-    }
-
-    // 类型约束：source 可后接的目标集合是否包含 target 类型
-    var allowed = ALLOWED_NEXT[source.type];
-    if (allowed && allowed.indexOf(target.type) === -1) {
-      var st = NODE_DEFS[source.type] || { title: source.type };
-      var tt = NODE_DEFS[target.type] || { title: target.type };
-      notify("「" + st.title + "」不能直接连接「" + tt.title + "」");
-      return false;
     }
     return true;
   }
@@ -444,6 +479,7 @@
     SHAPE_STYLES: NODE_DEFS,
     NODE_DEFS: NODE_DEFS,
     ALLOWED_NEXT: ALLOWED_NEXT,
+    LINK_RULES: LINK_RULES,
     types: Object.keys(NODE_DEFS)
   };
 })(window);

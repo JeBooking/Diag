@@ -702,51 +702,98 @@
     return type === "diagnosis/resolved" || type === "diagnosis/escalate" ||
            type === "diagnosis/continue";
   }
-  // 全局约束：所有「诊断节点 / 诊断动作」链路末端必须接到「问题解决 / 上升」。
-  // 返回问题描述数组（供 validateGraph 与 exportJSON「保存前校验」复用）。
-  function findOpenChainIssues() {
-    var issues = [];
-    var nodes = graph._nodes;
-    nodes.forEach(function (nd) {
-      if (nd.type !== "diagnosis/diag" && nd.type !== "diagnosis/action") return;
-      var outs = (nd.outputs || []).filter(function (o) { return (o.links || []).length > 0; });
-      if (!outs.length) return; // 孤立节点由"未接入流程"另行提示
-      var leafSet = {};
-      var stk = [nd];
-      var seen = {};
-      while (stk.length) {
-        var cur = stk.pop();
-        if (!cur || seen[cur.id]) continue;
-        seen[cur.id] = true;
-        var os = (cur.outputs || []).filter(function (o) { return (o.links || []).length > 0; });
-        if (!os.length) { leafSet[cur.id] = cur; continue; }
-        os.forEach(function (o) {
-          (o.links || []).forEach(function (id) {
-            var l = graph.links[id];
-            if (l) stk.push(graph.getNodeById(l.target_id));
+  /* -----------------------------------------------------------
+   * 全局规则（GRAPH_RULES）
+   *
+   * 每条规则在「保存（导出）」与「验证流程」时统一执行。
+   * 规则结构：
+   *   id      : 唯一标识（便于定位/调试）
+   *   level   : "error" = 阻断保存（标红）   "warn" = 仅提示，不阻断保存
+   *   check   : function(g) -> string[]   （返回问题描述列表，不含前缀符号）
+   *   g       = { graph, nodes, nodeLabel, isTerminal, reachable }
+   *             reachable 为「从起点可达的节点 id 集合」，无起点时为 null
+   *
+   * ★ 以后新增全局约束：在此数组追加一条对象即可，保存与验证自动覆盖，
+   *   无需改动 validateGraph / exportJSON 中的其它逻辑。
+   * --------------------------------------------------------- */
+  var GRAPH_RULES = [
+    {
+      id: "single-start",
+      level: "error",
+      check: function (g) {
+        var issues = [];
+        var starts = g.graph.findNodesByType("diagnosis/start");
+        if (starts.length === 0) issues.push("缺少【诊断起点】节点");
+        if (starts.length > 1) issues.push("存在多个【诊断起点】，应仅有一个");
+        return issues;
+      }
+    },
+    {
+      id: "reachable",
+      level: "warn",
+      check: function (g) {
+        var issues = [];
+        if (!g.reachable) return issues; // 无起点时由 single-start 提示
+        g.nodes.forEach(function (nd) {
+          if (nd.type === "diagnosis/start") return;
+          var hasParent = (nd.inputs || []).some(function (inp) {
+            return inp && inp.link != null && inp.link !== -1;
           });
+          if (!hasParent) {
+            issues.push(g.nodeLabel(nd) + " 未接入流程（无上游连接）");
+          } else if (!g.reachable[nd.id]) {
+            issues.push(g.nodeLabel(nd) + " 无法从起点到达");
+          }
         });
+        return issues;
       }
-      var badLeaves = [];
-      for (var k in leafSet) {
-        if (!isTerminal(leafSet[k].type)) badLeaves.push(leafSet[k]);
+    },
+    {
+      id: "terminal-closure",
+      level: "error",
+      check: function (g) {
+        // 所有「诊断节点 / 诊断动作」链路末端必须接到【问题解决 / 上升】
+        var issues = [];
+        g.nodes.forEach(function (nd) {
+          if (nd.type !== "diagnosis/diag" && nd.type !== "diagnosis/action") return;
+          var outs = (nd.outputs || []).filter(function (o) { return (o.links || []).length > 0; });
+          if (!outs.length) return; // 孤立节点由 reachable 提示
+          // 收集从该节点可达的所有叶子
+          var leafSet = {}, stk = [nd], seen = {};
+          while (stk.length) {
+            var cur = stk.pop();
+            if (!cur || seen[cur.id]) continue;
+            seen[cur.id] = true;
+            var os = (cur.outputs || []).filter(function (o) { return (o.links || []).length > 0; });
+            if (!os.length) { leafSet[cur.id] = cur; continue; }
+            os.forEach(function (o) {
+              (o.links || []).forEach(function (id) {
+                var l = g.graph.links[id];
+                if (l) stk.push(g.graph.getNodeById(l.target_id));
+              });
+            });
+          }
+          var bad = [];
+          for (var k in leafSet) {
+            if (!g.isTerminal(leafSet[k].type)) bad.push(leafSet[k]);
+          }
+          if (bad.length) {
+            issues.push("「" + g.nodeLabel(nd) + "」链路末端未接到【问题解决】或【上升】（终止于：" +
+              bad.map(g.nodeLabel).join("、") + "）");
+          }
+        });
+        return issues;
       }
-      if (badLeaves.length) {
-        issues.push("「" + nodeLabel(nd) + "」链路末端未接到【问题解决】或【上升】（终止于：" +
-          badLeaves.map(nodeLabel).join("、") + "）");
-      }
-    });
-    return issues;
-  }
-  function validateGraph() {
-    var issues = [];
-    var starts = graph.findNodesByType("diagnosis/start");
-    if (starts.length === 0) issues.push("✗ 缺少【诊断起点】节点");
-    if (starts.length > 1) issues.push("✗ 存在多个【诊断起点】，应仅有一个");
+    }
+  ];
 
+  // 构造传给各规则的校验上下文（含从起点可达性遍历）
+  function buildCheckContext() {
     var nodes = graph._nodes;
-    var reachable = {};
-    if (starts.length >= 1) {
+    var starts = graph.findNodesByType("diagnosis/start");
+    var reachable = null;
+    if (starts.length) {
+      reachable = {};
       var stack = [starts[0]];
       while (stack.length) {
         var n = stack.pop();
@@ -760,22 +807,26 @@
         });
       }
     }
+    return { graph: graph, nodes: nodes, nodeLabel: nodeLabel, isTerminal: isTerminal, reachable: reachable };
+  }
 
-    nodes.forEach(function (nd) {
-      if (nd.type === "diagnosis/start") return;
-      var hasParent = (nd.inputs || []).some(function (inp) {
-        return inp && inp.link != null && inp.link !== -1;
+  // 统一执行全部全局规则。opts.onlyErrors=true 时只跑 error 级（供保存拦截）。
+  function runGlobalChecks(opts) {
+    opts = opts || {};
+    var g = buildCheckContext();
+    var issues = [];
+    GRAPH_RULES.forEach(function (rule) {
+      if (opts.onlyErrors && rule.level !== "error") return;
+      var found = rule.check(g) || [];
+      found.forEach(function (s) {
+        issues.push((rule.level === "error" ? "✗ " : "⚠ ") + s);
       });
-      if (!hasParent) {
-        issues.push("⚠ " + nodeLabel(nd) + " 未接入流程（无上游连接）");
-      } else if (starts.length && !reachable[nd.id]) {
-        issues.push("⚠ " + nodeLabel(nd) + " 无法从起点到达");
-      }
     });
+    return issues;
+  }
 
-    // 全局约束：链路末端必须闭合
-    findOpenChainIssues().forEach(function (s) { issues.push("✗ " + s); });
-
+  function validateGraph() {
+    var issues = runGlobalChecks();
     if (!issues.length) issues.push("✓ 诊断流程结构有效：单一入口、无环路、所有节点可达、链路末端均闭合。");
     showStatus("【结构验证】\n" + issues.join("\n"));
   }
@@ -811,8 +862,9 @@
 
   /* ---------- 导入 / 导出 ---------- */
   function exportJSON() {
-    // 保存前全局校验：链路末端必须接到【问题解决/上升】，违规则拦截并提示
-    var openIssues = findOpenChainIssues();
+    // 保存前全局校验：仅跑 error 级规则（链路末端必须接到【问题解决/上升】、
+    // 单一入口等），违规则拦截导出并提示
+    var openIssues = runGlobalChecks({ onlyErrors: true });
     if (openIssues.length) {
       showToast("保存前校验未通过：\n" + openIssues.join("\n"), "error");
       showStatus("【保存前校验】存在未闭合链路，已拦截导出：\n" + openIssues.join("\n"));
@@ -855,6 +907,10 @@
   document.getElementById("btn-infer").onclick = runInference;
   document.getElementById("btn-export").onclick = exportJSON;
   document.getElementById("btn-import").onclick = importJSON;
+
+  /* ---------- 暴露规则引擎（供测试与未来扩展） ---------- */
+  window.DiagFlowUI.GRAPH_RULES = GRAPH_RULES;
+  window.DiagFlowUI.runGlobalChecks = runGlobalChecks;
 
   /* ---------- 启动 ---------- */
   resizeCanvas();

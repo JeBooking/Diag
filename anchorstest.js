@@ -463,5 +463,68 @@ contNode.onDblClick();
 check("继续活动双击不触发编辑", contEditCalled === false);
 sandbox.DiagFlowUI.startTextEdit = origStartEdit;
 
+console.log("== 12. 规则引擎结构 & 全局检查（GRAPH_RULES / runGlobalChecks） ==");
+// section 10 右键拖拽改动了 ds.offset/scale，这里复位以使用纯净坐标系（贴近真实初始状态）
+canvas.ds.offset = [0, 0];
+canvas.ds.scale = 1;
+syncVisible();
+
+// 12.1 连线规则数组结构
+const linkRuleIds = (sandbox.DiagFlowNodes.LINK_RULES || []).map((r) => r.id).sort();
+check("LINK_RULES 含 5 条连线规则", linkRuleIds.length === 5, linkRuleIds.join(","));
+check("LINK_RULES 含预期 id", ["no-cycle", "no-self", "single-parent", "start-is-source-only", "type-compat"]
+  .every((id) => linkRuleIds.indexOf(id) !== -1), linkRuleIds.join(","));
+check("每条连线规则都有 test 函数", (sandbox.DiagFlowNodes.LINK_RULES || []).every((r) => typeof r.test === "function"));
+
+// 12.2 全局规则数组结构（通过 DiagFlowUI 暴露）
+const graphRuleIds = (sandbox.DiagFlowUI.GRAPH_RULES || []).map((r) => r.id).sort();
+check("GRAPH_RULES 含 3 条全局规则", graphRuleIds.length === 3, graphRuleIds.join(","));
+check("GRAPH_RULES 含 single-start/reachable/terminal-closure",
+  ["reachable", "single-start", "terminal-closure"].every((id) => graphRuleIds.indexOf(id) !== -1),
+  graphRuleIds.join(","));
+check("每条全局规则都有 check 函数", (sandbox.DiagFlowUI.GRAPH_RULES || []).every((r) => typeof r.check === "function"));
+
+// 12.3 合法且闭合的图 → 无 error
+graph.clear();
+bodyChildren.length = 0; delete ids["toast-host"];
+const S = mkNode("diagnosis/start", 100, 100);
+const D = mkNode("diagnosis/diag", 300, 100);
+const C = mkNode("diagnosis/conclusion", 500, 100);
+const M = mkNode("diagnosis/measure", 700, 100);
+const R = mkNode("diagnosis/resolved", 900, 100);
+const CO = mkNode("diagnosis/continue", 1100, 100);
+syncVisible();
+drag(anchor(S, 1), anchor(D, 3));
+drag(anchor(D, 1), anchor(C, 3));
+drag(anchor(C, 1), anchor(M, 3));
+drag(anchor(M, 1), anchor(R, 3));
+drag(anchor(R, 1), anchor(CO, 3));
+const allClosed = sandbox.DiagFlowUI.runGlobalChecks();
+check("闭合合法图：runGlobalChecks 无问题", allClosed.length === 0, allClosed.join(" / "));
+check("闭合合法图：仅 error 级检查也无问题", sandbox.DiagFlowUI.runGlobalChecks({ onlyErrors: true }).length === 0);
+
+// 12.4 开放的图（diag→diag 末端未接问题解决/上升）→ terminal-closure error
+graph.clear();
+bodyChildren.length = 0; delete ids["toast-host"];
+const S2 = mkNode("diagnosis/start", 100, 100);
+const D1b = mkNode("diagnosis/diag", 300, 100);
+const D2b = mkNode("diagnosis/diag", 500, 100);
+syncVisible();
+drag(anchor(S2, 1), anchor(D1b, 3));
+drag(anchor(D1b, 1), anchor(D2b, 3)); // D1b 链路末端 D2b 非终结节
+const openErrs = sandbox.DiagFlowUI.runGlobalChecks({ onlyErrors: true });
+check("开放图：仅 error 检查命中末端未闭合", openErrs.some((s) => s.indexOf("末端未接到") !== -1),
+  openErrs.join(" / "));
+
+// 12.5 缺少起点 → single-start error（注：多个起点已被 onNodeAdded 在添加时拦截，
+//     故这里测"缺少起点"这一 runGlobalChecks 实际会命中的分支）
+graph.clear();
+bodyChildren.length = 0; delete ids["toast-host"];
+mkNode("diagnosis/diag", 100, 100); // 只有诊断节点、无起点
+syncVisible();
+const startErrs = sandbox.DiagFlowUI.runGlobalChecks({ onlyErrors: true });
+check("缺少起点：命中 single-start 错误", startErrs.some((s) => s.indexOf("缺少【诊断起点】") !== -1),
+  startErrs.join(" / "));
+
 console.log("\n结果: " + pass + " 通过 / " + fail + " 失败");
 process.exit(fail ? 1 : 0);
